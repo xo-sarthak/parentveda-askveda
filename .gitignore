@@ -1,0 +1,16 @@
+# --- Secrets: NEVER commit ---
+.env
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# --- Local caches (embedding models, etc.) ---
+.cache/
+*.log
+
+# --- IDE ---
+.idea/
+.vscode/

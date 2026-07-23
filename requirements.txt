@@ -1,0 +1,19 @@
+# Python dependencies for AskVeda. `pip install -r requirements.txt` installs these.
+# We grow this list PER PHASE, so you always see why each package arrived.
+
+# --- Phase 0: the web service skeleton ---
+fastapi              # the web framework — turns Python functions into HTTP endpoints
+uvicorn[standard]    # the ASGI server that actually runs FastAPI (handles the network)
+pydantic-settings    # typed configuration loaded from env / .env
+python-dotenv        # lets the local .env file be read during development
+httpx                # HTTP client — used to test our endpoints now; to call APIs later
+
+# --- Phase 2: content ingestion (embeddings + DB) ---
+supabase             # the Supabase client (talks to Postgres via PostgREST)
+fastembed            # lightweight ONNX embeddings (bge-small, 384-dim) — no PyTorch, CPU-friendly
+
+# --- Phase 3: the LLM (Groq, via the OpenAI-compatible client) ---
+openai               # OpenAI-compatible client — talks to Groq via a base_url swap (or any compatible API)
+
+# --- Phase 5: the app door (auth) ---
+pyjwt                # verify the app user's Supabase login token (JWT)
