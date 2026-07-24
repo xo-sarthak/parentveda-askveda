@@ -962,3 +962,128 @@ automatically.
 secrets, point the app's `AskVedaConfig.baseUrl` and MSG91's webhook at the public
 HTTPS URL. After that, all the dev-only ceremony (adb reverse, localhost) disappears
 and it works for real users on real phones, anywhere.
+
+---
+
+## ★ The 7-section feed (making Ask Veda a "Google results page")
+
+A design decision the owner drove: the answer alone isn't the product — like a
+Google search, one question should return a **summary answer + a feed of relevant
+articles, videos, products and services**, all about *that* question. And the old
+offline engine (plain static answers, keyword-matched section links) had to go.
+
+### The key realization that unlocked it
+The owner's fear was: *keyword tagging surfaces junk — a coffee article that merely
+mentions "papaya" would show up for a papaya question.* True — but the RAG system
+doesn't match by keywords, it matches by **meaning** (vector similarity). The coffee
+article's *meaning* is coffee; its vector sits far from a papaya question even
+though the word appears. **Semantic search is exactly the tool that kills the
+keyword-junk problem.** So the whole 7-section feed can be built from one semantic
+search.
+
+### How the 7 sections are produced (Job 1 — backend)
+```
+ONE wide semantic search (top ~25 chunks)
+   ├─ top 6 → LLM (one call) → ANSWER + MEANING + ACTIONS      (sections 1–3)
+   └─ all 25 → group by `kind`, floor by relevance, dedupe:
+        content  → More information   (articles/reads/guides…)   (section 4)
+        videos   → Videos             (none ingested yet)
+        products → Products           (kind=product)             (section 6)
+        services → Services           (kind=expert)              (section 7)
+```
+
+### Concepts
+
+**1. One search feeds everything.** The same 25 retrieved chunks power both the
+answer (top few) and the pointer sections (all of them, grouped). One embedding,
+one query — cheap.
+
+**2. The relevance floor is the precision knob.** A pointer only appears if its
+similarity clears `section_min_similarity` (0.45). Set it higher → tighter, fewer
+"loosely related" cards; lower → more, looser. This is the direct dial for "don't
+show me random stuff."
+
+**3. Every section is ALWAYS returned — empty means "Coming soon".** The response
+always carries all section keys, even if a list is empty. The app renders an empty
+list as a "Coming soon" card, so the 7-section format never collapses and never
+looks like limited scope — content is still being added.
+
+**4. Deep-link identity travels with each pointer.** Each card carries the app's own
+`doc_id` (e.g. `cani_papaya`, `ppprod_stroller`, `ppexp_ruchi`) — not the Supabase
+row id — so the app can open the *exact* article/product/expert. We look the doc_id
+up from `veda_knowledge` at build time; `content_posts`/`articles` items travel by
+`(source_table, source_id)` instead.
+
+**5. Structured LLM output, parsed defensively.** Sections 1–3 come from ONE LLM call
+that must reply in a labelled format (`ANSWER:` / `MEANING:` / `ACTIONS:`) — labels,
+not JSON, because a small model follows labels far more reliably. We parse it
+tolerantly; if the labels are missing, the whole text becomes the answer.
+
+**6. The cache now stores the whole structured response** (as JSON), so a cache hit
+returns the full feed — answer, meaning, actions AND the section pointers — for ~₹0.
+Old plain-text cache rows still load (as answer-only).
+
+### Two bugs the testing caught (same lesson, again)
+- **A fresh decline phrasing slipped the gap detector.** The structured format made
+  the model write *"I couldn't find information … in the provided content"* instead
+  of the `NO_ANSWER` sentinel — so the gap wasn't logged and the web fallback never
+  fired. Fix: broaden the decline detector to catch "couldn't find / no information
+  on / not in the provided content". *You cannot rely on a small model's obedience —
+  detect what it actually does.* (Third time we've learned this.)
+- **A poisoned cache entry.** The pre-fix run had *cached* that bad decline, so even
+  after the fix it kept serving it as `cache:exact`. Lesson: when you change what
+  counts as a valid answer, **clear the entries cached under the old rule.**
+
+### Verified
+- "anatomy scan" → answer + meaning + 2 actions + 4 relevant scan articles (real
+  doc_ids); videos/products/services empty → "Coming soon".
+- "stroller" → 4 products; "breastfeeding help" → the lactation counsellor service.
+- cache hit returns the full feed; web fallback returns answer + empty sections.
+
+### Job 2 — the app renders the feed (parenting screen)
+The parenting Ask Veda screen (`askveda_screen.dart`) now renders the backend's
+feed directly; the offline keyword engine is **retired from the answer path**.
+
+- `AskVedaService.ask()` returns the full feed (answer/meaning/actions +
+  content/videos/products/services as `VedaFeedItem`s).
+- `_send()` is now async: show a **loading** card → call the backend → render the
+  feed, or a calm **"Connect to the internet"** card (with Retry) if it's
+  unreachable. No misleading offline answer, ever.
+- **All 7 sections always render** — an empty section shows a **"Coming soon"**
+  card (Community is a permanent Coming-soon for now; Videos too until Job 4).
+- **Deep-linking** (real, not a snippet): tapping a card opens the exact thing *on
+  top of* Ask Veda, so **Back returns to the chat**:
+  - product → the product screen; content/expert → a **reader** showing the full
+    body; video → "coming soon" (Job 4).
+- `kind` arrives as a *string* now, so the app's colour/icon/label helpers are
+  string-based (`_kindColorStr` etc.), not the old `VedaKind` enum.
+
+**A test lesson worth keeping:** the widget test failed with a `RenderFlex
+overflowed by 68px`. Cause: Flutter tests use the **Ahem font**, where every glyph
+is a fixed *square* of the font size — so "Connect to the internet" measured 345px
+and overflowed. The real app's font is far narrower and never overflows, but the
+test caught an unwrapped `Text` in a `Row`. Fix (and good practice regardless):
+wrap it in `Expanded`. *A widget test's font is not your app's font.*
+
+### Job 3 — the flagship pregnancy screen
+The 1700-line pregnancy screen (`ask_veda_screen.dart`) now renders the same feed.
+
+The risk here was its size + **two** full offline render paths (hand-authored
+"showcase" answers *and* retrieval), interleaved with the reusable card helpers.
+Rather than rip out ~900 interleaved lines, per this project's **"comment out,
+never delete / keep for revert"** rule, the offline rendering is left **dormant**
+(unused) with a file-level `// ignore_for_file: unused_element`, and the feed path
+was added on top: async `_send`, a feed `_resultScroll`, the loading/offline cards,
+the `_feed*` section widgets, the deep-link resolver and string-based kind helpers.
+Result: the screen renders purely from the backend, the old code is one revert
+away, `flutter analyze` is clean, and the **full 414-test suite passes**.
+
+(One deliberate difference from parenting: pregnancy product cards route to the
+Products hub for now rather than deep-linking a specific product — the pregnancy
+catalog match is a later refinement; content/expert deep-linking works fully.)
+
+### What's next (Job 4)
+Ingest **videos** (whatever host — Bunny Stream / Cloudflare Stream; the backend
+just stores each video's title + keywords + a playback URL) to switch the Videos
+sub-section from "Coming soon" to real content, and wire the video deep-link to the
+player. Then AskVeda's feed is complete on both screens.

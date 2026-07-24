@@ -1,26 +1,27 @@
 """
-Dev CLI — ask a question through the FULL brain (Phase 4).
+Dev CLI — ask a question through the full brain and SEE all 7 sections.
 
     python -m scripts.ask "what happens at the anatomy scan?"
 
-Now routes through app.answer.answer(), so it exercises the whole pipeline:
-guardrails → cache → retrieval → LLM → logging. The printed `source` tells you
-which path answered:
-    llm            → freshly generated (cost money)
-    cache:exact    → same question asked before (instant, ~₹0)
-    cache:semantic → a near-identical question was cached (instant, ~₹0)
-    red_flag       → possible emergency → calm doctor routing
-    low_confidence → nothing in content was close enough
-    rate_limited / spend_capped → a guardrail stopped it
-
-Tip: ask the SAME question twice — the 2nd time comes back as cache:exact, fast,
-with no tokens spent.
+Sections 1-3 (answer/meaning/actions) come from the LLM; 4/6/7 + videos are the
+retrieved pointer cards. An empty section is where the app shows "Coming soon".
 """
 
 import sys
 import time
 
 from app.answer import answer
+
+
+def _show_section(name: str, items: list) -> None:
+    if not items:
+        print(f"  {name}: (empty -> 'Coming soon')")
+        return
+    print(f"  {name}:")
+    for it in items:
+        sim = it.get("similarity")
+        sim_s = f"{sim:.2f}" if isinstance(sim, (int, float)) else "?"
+        print(f"    - [{sim_s}] {it.get('kind')}: {it.get('title')}  (id={it.get('doc_id')})")
 
 
 def main() -> None:
@@ -30,22 +31,32 @@ def main() -> None:
         return
 
     print(f"\nQ: {question}\n")
-
     t0 = time.time()
-    res = answer(question, user_key="dev-cli", channel="app")
+    r = answer(question, user_key="dev-cli", channel="app", week=20)
     dt = time.time() - t0
 
-    print("=" * 60)
-    print(res["answer"])
-    print("=" * 60)
+    print("=" * 66)
+    print("1) VEDA ANSWER:")
+    print("  " + r["answer"].replace("\n", "\n  "))
+    if r.get("meaning"):
+        print("\n2) WHAT THIS MEANS FOR YOU:")
+        print("  " + r["meaning"].replace("\n", "\n  "))
+    if r.get("actions"):
+        print("\n3) RECOMMENDED ACTIONS:")
+        for a in r["actions"]:
+            print(f"  - {a}")
+    print("\n4) MORE INFORMATION")
+    _show_section("articles/reads", r.get("content", []))
+    _show_section("videos", r.get("videos", []))
+    print("6) PRODUCTS")
+    _show_section("products", r.get("products", []))
+    print("7) SERVICES")
+    _show_section("services", r.get("services", []))
+    print("=" * 66)
 
-    # A compact status line so you can SEE which path ran.
-    bits = [f"source={res['source']}", f"cache_hit={res['cache_hit']}", f"time={dt:.2f}s"]
-    if "top_similarity" in res:
-        bits.append(f"top_sim={res['top_similarity']:.3f}")
-    if res.get("source") == "llm":
-        bits.append(f"tokens={res['input_tokens']}in/{res['output_tokens']}out")
-        bits.append(f"cost=${res['cost_usd']}")
+    bits = [f"source={r['source']}", f"cache_hit={r['cache_hit']}", f"time={dt:.2f}s"]
+    if r.get("source") == "llm":
+        bits.append(f"cost=${r.get('cost_usd')}")
     print("[" + "  ".join(bits) + "]")
 
 

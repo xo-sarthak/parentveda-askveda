@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     retrieval_top_k: int = 3  # how many nearest content chunks to feed the LLM
     min_retrieval_similarity: float = 0.30  # below this = off-topic/gap → skip the LLM
 
+    # --- 7-section structured response (feed rework) ---
+    sections_retrieval_k: int = 25       # wider search to populate the pointer sections
+    answer_context_k: int = 6            # how many top chunks feed the LLM's answer
+    section_min_similarity: float = 0.55  # a pointer must be THIS relevant to appear
+    section_max_items: int = 4           # max items shown per section
+
     # --- Cache + guardrails (Phase 4) ---
     cache_similarity_threshold: float = 0.95  # reuse a cached answer only if THIS close
     rate_limit_per_day: int = 20              # max questions per user per day

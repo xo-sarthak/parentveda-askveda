@@ -13,11 +13,29 @@ Safety rules baked in:
     answer), because a subtle wording change there can flip the correct answer.
 """
 
+import json
 import re
 from datetime import datetime, timezone
 
 from app.config import settings
 from app.db import supabase
+
+
+def _empty_payload(answer: str = "") -> dict:
+    return {"answer": answer, "meaning": "", "actions": [],
+            "content": [], "videos": [], "products": [], "services": []}
+
+
+def _load_payload(stored: str) -> dict:
+    """The cache column now holds the full structured response as JSON. Old rows may
+    still be plain answer text — treat those as answer-only (no sections)."""
+    try:
+        obj = json.loads(stored)
+        if isinstance(obj, dict) and "answer" in obj:
+            return {**_empty_payload(), **obj}
+    except Exception:
+        pass
+    return _empty_payload(stored)
 
 
 def normalize(question: str) -> str:
@@ -104,7 +122,7 @@ def lookup(question: str, week_key: str, q_vector: list[float]) -> dict | None:
     if res.data:
         row = res.data[0]
         _touch(row["id"], row.get("hit_count"))
-        return {"answer": row["answer"], "match": "exact"}
+        return {"payload": _load_payload(row["answer"]), "match": "exact"}
 
     # 2) SEMANTIC — skip for verdict/dosage questions (exact-only).
     if _is_exact_only(question):
@@ -122,13 +140,15 @@ def lookup(question: str, week_key: str, q_vector: list[float]) -> dict | None:
     if rpc.data:
         row = rpc.data[0]
         _touch(row["id"], None)
-        return {"answer": row["answer"], "match": "semantic", "similarity": row.get("similarity")}
+        return {"payload": _load_payload(row["answer"]), "match": "semantic",
+                "similarity": row.get("similarity")}
 
     return None
 
 
-def store(question: str, week_key: str, q_vector: list[float], answer: str) -> None:
-    """Save a freshly generated answer so future repeats are free. Best-effort."""
+def store(question: str, week_key: str, q_vector: list[float], payload: dict) -> None:
+    """Cache the full structured response (as JSON) so future repeats are free.
+    Best-effort — a caching failure must never break the answer."""
     try:
         supabase.table("veda_cache").upsert(
             {
@@ -136,7 +156,7 @@ def store(question: str, week_key: str, q_vector: list[float], answer: str) -> N
                 "cached_question": question,
                 "question_embedding": _to_vector_literal(q_vector),
                 "week_key": week_key,
-                "answer": answer,
+                "answer": json.dumps(payload, ensure_ascii=False),
             },
             on_conflict="question_norm,week_key",
         ).execute()

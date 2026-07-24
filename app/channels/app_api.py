@@ -27,9 +27,31 @@ class AskRequest(BaseModel):
     domain: str | None = None            # optional retrieval hint, not a gate
 
 
+class SectionItem(BaseModel):
+    """One pointer card — display fields + the identity the app deep-links with."""
+    doc_id: str | None = None
+    source_table: str | None = None
+    source_id: str | None = None
+    kind: str | None = None
+    title: str | None = None
+    url: str | None = None
+    snippet: str | None = None
+    body: str | None = None       # full text for content items (the reader shows this)
+    similarity: float | None = None
+
+
 class AskResponse(BaseModel):
-    answer: str
-    source: str        # llm | cache:exact | cache:semantic | red_flag | low_confidence | …
+    # Sections 1–3 (from the LLM)
+    answer: str                       # S1 Veda Answer
+    meaning: str = ""                 # S2 What this means for you
+    actions: list[str] = []           # S3 Recommended next actions
+    # Sections 4/6/7 + videos (pointers; empty list → app shows "Coming soon")
+    content: list[SectionItem] = []   # S4 More information
+    videos: list[SectionItem] = []    # (sub-section of S4)
+    products: list[SectionItem] = []  # S6 Products
+    services: list[SectionItem] = []  # S7 Services
+    # meta
+    source: str
     cache_hit: bool
 
 
@@ -51,6 +73,12 @@ def ask(
     )
     return AskResponse(
         answer=result["answer"],
+        meaning=result.get("meaning", ""),
+        actions=result.get("actions", []),
+        content=result.get("content", []),
+        videos=result.get("videos", []),
+        products=result.get("products", []),
+        services=result.get("services", []),
         source=result["source"],
         cache_hit=result["cache_hit"],
     )

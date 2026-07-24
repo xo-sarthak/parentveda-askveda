@@ -160,3 +160,89 @@ def build_messages(
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": user_message},
     ]
+
+
+# ---------------------------------------------------------------------------
+# Structured output (the 7-section feed): sections 1–3 come from the LLM in ONE
+# call — the direct ANSWER, "what this MEANING for you", and a few ACTIONS. We ask
+# for a labelled format (not JSON — a small model follows labels far more reliably)
+# and parse it defensively.
+# ---------------------------------------------------------------------------
+import re  # noqa: E402  (kept local to the structured helpers)
+
+_STRUCTURED_FORMAT = (
+    "Write your reply in EXACTLY this labelled format, and nothing else:\n"
+    "ANSWER: <a warm, direct answer to her question, framed correctly for her stage>\n"
+    "MEANING: <one or two sentences on what this means for HER specifically>\n"
+    "ACTIONS:\n"
+    "- <a concrete, useful next step>\n"
+    "- <another next step>\n\n"
+    f"If the material does NOT directly cover the question, put exactly {NO_ANSWER} "
+    "as the ANSWER and leave MEANING and ACTIONS blank."
+)
+
+
+def build_full_messages(question: str, chunks: list[dict], stage_note: str | None = None) -> list[dict]:
+    """Like build_messages, but asks for the 3 LLM sections (answer/meaning/actions)."""
+    context = "\n\n".join(_format_chunk(i + 1, c) for i, c in enumerate(chunks)) \
+        if chunks else "(no relevant content was found)"
+    stage_line = f"ABOUT THE PERSON ASKING: {stage_note}\n\n" if stage_note else ""
+    user_message = (
+        f"{stage_line}"
+        "CONTENT (the only source you may use):\n"
+        f"{context}\n\n"
+        f"QUESTION: {question}\n\n"
+        f"{_STRUCTURED_FORMAT}"
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
+
+
+def build_web_full_messages(question: str, results: list[dict], stage_note: str | None = None) -> list[dict]:
+    """Structured version of the trusted-web prompt (must also name its source)."""
+    passages = "\n\n".join(
+        f"[{i + 1}] {r.get('title')} ({r.get('url')})\n{(r.get('content') or '').strip()}"
+        for i, r in enumerate(results)
+    )
+    stage_line = f"ABOUT THE PERSON ASKING: {stage_note}\n\n" if stage_note else ""
+    user_message = (
+        f"{stage_line}"
+        "TRUSTED SOURCES (the only material you may use — recognised health "
+        "authorities, not our own content):\n"
+        f"{passages}\n\n"
+        f"QUESTION: {question}\n\n"
+        f"{_STRUCTURED_FORMAT}\n"
+        'In the ANSWER, end with one line naming the source(s), e.g. "Source: NHS".'
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_message},
+    ]
+
+
+def parse_structured(text: str) -> dict:
+    """Parse the labelled ANSWER/MEANING/ACTIONS reply → {answer, meaning, actions}.
+
+    Defensive: if the labels are missing (the model ignored the format), the whole
+    text becomes the answer, with empty meaning/actions.
+    """
+    t = (text or "").strip()
+    # `[ \t]*` (not `\s*`) after each label so the newline before the NEXT label is
+    # preserved for the lookahead — otherwise an empty MEANING swallows "ACTIONS:".
+    a = re.search(r"ANSWER:[ \t]*(.*?)(?=\n[ \t]*MEANING:|\n[ \t]*ACTIONS:|\Z)", t, re.S | re.I)
+    m = re.search(r"MEANING:[ \t]*(.*?)(?=\n[ \t]*ACTIONS:|\Z)", t, re.S | re.I)
+    ac = re.search(r"ACTIONS:[ \t]*(.*)\Z", t, re.S | re.I)
+
+    answer = a.group(1).strip() if a else t
+    meaning = m.group(1).strip() if m else ""
+    actions: list[str] = []
+    if ac:
+        for line in ac.group(1).splitlines():
+            s = line.strip().lstrip("-•*").strip()
+            # Drop a stray "Source: …" citation line — it belongs in the answer,
+            # not as a recommended action.
+            if s and not s.lower().startswith("source:"):
+                actions.append(s)
+    return {"answer": answer, "meaning": meaning, "actions": actions[:5]}
