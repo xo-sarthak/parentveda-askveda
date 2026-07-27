@@ -23,6 +23,7 @@ from app.prompt import (
     build_full_messages,
     build_web_full_messages,
     describe_stage,
+    describe_ttc_stage,
     parse_structured,
 )
 from app.retriever import retrieve
@@ -139,6 +140,17 @@ def answer(
     week: int | None = None,
     trimester: str | None = None,
     child_age_months: int | None = None,
+    # Trying-to-conceive context. ADDITIVE FRAMING, never a filter — a TTC user
+    # asking about labour still gets a full answer ("one mother, one journey").
+    stage: str | None = None,
+    chapter: str | None = None,
+    cycle_day: int | None = None,
+    ttc_path: str | None = None,
+    # WHO owns the timing of this cycle — more decisive than ttc_path, because a
+    # medicated cycle overrides her body's own signals entirely.
+    timing_ownership: str | None = None,
+    months_trying: int | None = None,
+    lang: str | None = None,   # 'en' | 'hi' — picks which bilingual twin is shown
     domain: str | None = None,
 ) -> dict:
     """Answer one question end to end → the full 7-section response dict."""
@@ -162,7 +174,12 @@ def answer(
 
     # Embed ONCE — reused by the cache lookup AND retrieval.
     q_vector = embed_query(question)
-    stage_key = cache.stage_key_for(week, trimester, child_age_months)
+    stage_key = cache.stage_key_for(
+        week, trimester, child_age_months,
+        stage=stage, chapter=chapter, ttc_path=ttc_path,
+        timing_ownership=timing_ownership,
+    )
+    is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
 
     # 4) Cache (exact → semantic). A hit returns the whole cached response.
@@ -181,7 +198,12 @@ def answer(
     results = retrieve(question, top_k=settings.sections_retrieval_k,
                        domain=domain, q_vector=q_vector)
     top_sim = results[0]["similarity"] if results else 0.0
-    stage_note = describe_stage(week, trimester, child_age_months)
+    stage_note = (
+        describe_ttc_stage(chapter, ttc_path, months_trying, cycle_day,
+                           timing_ownership=timing_ownership)
+        if is_ttc
+        else describe_stage(week, trimester, child_age_months)
+    )
 
     # 6) Confidence floor — nothing of ours is close. Record the gap, try the web.
     if top_sim < settings.min_retrieval_similarity:
@@ -197,7 +219,7 @@ def answer(
 
     # Build the pointer sections from the same results (enrich doc_ids for deep-link).
     sections.enrich_doc_ids(results)
-    secs = sections.build_sections(results)
+    secs = sections.build_sections(results, lang=lang)
     sections.attach_bodies(secs["content"])  # full body so the reader shows the real article
 
     # 7) Generate sections 1–3 from the top chunks (the only step that costs money).

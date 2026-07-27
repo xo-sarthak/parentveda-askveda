@@ -19,7 +19,9 @@ from app.config import settings
 from app.db import supabase
 
 _PRODUCT_KINDS = {"product"}
-_SERVICE_KINDS = {"expert"}
+# 'service' = a real bookable offering (TTC offerings are Offerings in the
+# booking engine); 'expert' = a named practitioner. Both belong in S7.
+_SERVICE_KINDS = {"expert", "service", "offering"}
 _VIDEO_KINDS = {"video"}
 
 
@@ -100,20 +102,36 @@ def attach_bodies(items: list[dict]) -> None:
         it["body"] = bodies.get((it.get("source_table"), it.get("source_id"))) or it.get("snippet", "")
 
 
-def build_sections(results: list[dict]) -> dict:
+def build_sections(results: list[dict], lang: str | None = None) -> dict:
     """Group retrieved chunks → the pointer sections (deduped, floored, capped)."""
     floor = settings.section_min_similarity
     cap = settings.section_max_items
     out: dict[str, list] = {"content": [], "videos": [], "products": [], "services": []}
     seen: dict[str, set] = {k: set() for k in out}
 
+    english = (lang or "en").lower().startswith("en")
+
     for r in results:
         if float(r.get("similarity") or 0) < floor:
             continue  # relevance floor — the precision knob
+        # Never show a Hinglish card to an English reader. (A Hinglish reader can
+        # still see an English card when no `_hi` twin exists, which is the right
+        # fallback — some content is English-only.)
+        if english and (r.get("doc_id") or "").endswith("_hi"):
+            continue
         sec = _section_for(r.get("category"))
-        key = (r.get("source_table"), r.get("source_id"))
-        if key in seen[sec] or len(out[sec]) >= cap:
-            continue  # dedupe by source; cap per section
+        if len(out[sec]) >= cap:
+            continue
+        # Dedupe on the BASE doc id. Bilingual content is stored as two rows —
+        # an English doc and its `_hi` twin — which are different source rows, so
+        # keying on the row id would show the same article/service twice, once in
+        # each language. Because results are similarity-ordered, the twin that
+        # matches the question's own language naturally wins.
+        doc_id = (r.get("doc_id") or "")
+        base = doc_id[:-3] if doc_id.endswith("_hi") else doc_id
+        key = base or f"{r.get('source_table')}:{r.get('source_id')}"
+        if key in seen[sec]:
+            continue
         seen[sec].add(key)
         out[sec].append(_item(r))
     return out

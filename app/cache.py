@@ -50,6 +50,10 @@ def stage_key_for(
     week: int | None = None,
     trimester: str | None = None,
     child_age_months: int | None = None,
+    stage: str | None = None,
+    chapter: str | None = None,
+    ttc_path: str | None = None,
+    timing_ownership: str | None = None,
 ) -> str:
     """Bucket the asker by LIFE STAGE so cached answers never cross stages.
 
@@ -57,7 +61,20 @@ def stage_key_for(
     stage (cheap). Different stage = a different cache entry (correct). E.g.
     "can we have sex during pregnancy?" is a different answer in T1 vs T3, and
     a mother whose baby is 3 months old is somewhere else entirely.
+
+    TRYING TO CONCEIVE buckets on chapter + path + timing ownership — deliberately
+    NOT cycle day. Cycle day would split every question 28 ways and destroy the
+    hit rate, while chapter ("the waiting days") and path (natural vs IVF) are
+    what actually change the answer's register.
+
+    OWNERSHIP is in the key because it is not implied by the path: the same
+    `ivf` can be a natural-cycle transfer (her LH still matters) or a fully
+    medicated one (her signals are noise, and the wait ends in a beta test).
+    Sharing one cached answer between those two would tell one of them something
+    untrue about her own body.
     """
+    if (stage or "").lower() in ("trying", "ttc", "trying_to_conceive"):
+        return f"ttc:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
     if child_age_months is not None:
         return f"cm{child_age_months}"  # parenting: child age in months
     if week:

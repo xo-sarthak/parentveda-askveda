@@ -9,7 +9,7 @@ brain.)
 """
 
 from fastapi import APIRouter, Header
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.answer import answer
 from app.auth import resolve_user_key
@@ -24,7 +24,27 @@ class AskRequest(BaseModel):
     week: int | None = None              # pregnancy week
     trimester: str | None = None         # pregnancy trimester (if week unknown)
     child_age_months: int | None = None  # parenting: baby already born
+    # Trying-to-conceive context (all optional, all framing-only).
+    stage: str | None = None             # trying | pregnancy | parenting
+    chapter: str | None = None           # preparingTogether … aNewBeginning
+    cycle_day: int | None = None         # NEVER sent from the partner's app
+    ttc_path: str | None = None          # natural | iui | ivf | …
+    # parentveda | clinic_guided | clinic_controlled — who owns this cycle's timing
+    timing_ownership: str | None = None
+    months_trying: int | None = None     # the strongest TTC personalisation signal
+    lang: str | None = None              # 'en' | 'hi' — which bilingual twin to show
     domain: str | None = None            # optional retrieval hint, not a gate
+
+    # KEEP unknown fields instead of discarding them, so `unknown_fields()` can
+    # report them. Pydantic's default is to drop silently — which is exactly how
+    # the app added `timing_ownership`, sent it for days, and had it do nothing
+    # with no error anywhere. The wire body is a contract across TWO repos; when
+    # only one side has been updated, that must be visible.
+    model_config = ConfigDict(extra="allow")
+
+    def unknown_fields(self) -> list[str]:
+        """Fields the app sent that this service does not understand (yet)."""
+        return sorted((self.model_extra or {}).keys())
 
 
 class SectionItem(BaseModel):
@@ -62,6 +82,11 @@ def ask(
     x_user_key: str | None = Header(default=None),
 ) -> AskResponse:
     user_key = resolve_user_key(authorization, x_user_key)
+    # Loud, not silent: the app is sending something we don't handle yet.
+    unknown = body.unknown_fields()
+    if unknown:
+        print(f"[/ask] app sent field(s) this service ignores: {unknown} "
+              f"— add them to AskRequest + answer() or they do nothing.")
     result = answer(
         body.question,
         user_key=user_key,
@@ -69,6 +94,13 @@ def ask(
         week=body.week,
         trimester=body.trimester,
         child_age_months=body.child_age_months,
+        stage=body.stage,
+        chapter=body.chapter,
+        cycle_day=body.cycle_day,
+        ttc_path=body.ttc_path,
+        timing_ownership=body.timing_ownership,
+        months_trying=body.months_trying,
+        lang=body.lang,
         domain=body.domain,
     )
     return AskResponse(

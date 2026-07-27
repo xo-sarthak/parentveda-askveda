@@ -17,3 +17,6 @@ openai               # OpenAI-compatible client — talks to Groq via a base_url
 
 # --- Phase 5: the app door (auth) ---
 pyjwt                # verify the app user's Supabase login token (JWT)
+
+# --- Tests ---
+pytest               # `python -m pytest tests/ -q` — pure-function tests, no network

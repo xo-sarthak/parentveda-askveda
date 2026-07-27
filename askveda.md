@@ -1082,7 +1082,301 @@ away, `flutter analyze` is clean, and the **full 414-test suite passes**.
 Products hub for now rather than deep-linking a specific product — the pregnancy
 catalog match is a later refinement; content/expert deep-linking works fully.)
 
-### What's next (Job 4)
+---
+
+## ★ Chapter 0 — Trying to Conceive (TTC)
+
+TTC is the stage *before* pregnancy, so the journey is now **trying → pregnancy →
+parenting**. Ask Veda had a live bug here (the FAB opened the *pregnancy* screen
+inside TTC and sent a meaningless `week`) and zero TTC content.
+
+### Job 1 — Safety + context plumbing
+
+**TTC red flags (the reason this went first).** The existing red-flag list is
+pregnancy/parenting-shaped. TTC has its own emergency and it is **time-critical**:
+a positive test plus **one-sided or shoulder-tip pain, dizziness or bleeding** can
+mean an **ectopic pregnancy** — same-day care. That now gets its *own* message,
+still calm but explicit about *today*, because "see your doctor sometime" is the
+wrong advice there. **OHSS** (rapid bloating / breathlessness after an IVF
+stimulation cycle) gets its own routing to the treating clinic. Plus general TTC
+concerns (severe pelvic pain, bleeding between periods, periods that stopped).
+Rules are checked **most time-critical first**.
+
+**Context fields — additive, never a filter.** `/ask` gained `stage`, `chapter`,
+`cycle_day`, `ttc_path`, `months_trying`. Nothing is excluded because of them —
+"one mother, one journey" still holds, so a TTC user asking about labour gets a
+full answer.
+
+**Cache bucketing: `ttc:<chapter>:<path>` — deliberately NOT cycle day.** Cycle day
+would split every question 28 ways and destroy the hit rate, while chapter ("the
+waiting days") and path (natural vs IVF) are what actually change the register.
+
+**`months_trying` is the strongest signal in this stage.** Past 12 months the
+framing changes explicitly: *"over a year — do NOT be breezy or offer easy
+reassurance."* "We started last month" and "we've been trying two years" must
+never read the same.
+
+### The bug this job caught (worth remembering)
+Testing a real TTC question — 26 months in, IVF, two-week wait — returned:
+> "This is a common experience for many women, **especially during the early
+> stages of pregnancy**."
+
+**She isn't pregnant.** With zero TTC content, retrieval pulled *pregnancy* chunks
+and the answer **inherited their register**; the polite stage note couldn't
+counteract it. Fixed by making the instruction blunt and giving counter-examples —
+*never write "during your pregnancy" / "in early pregnancy" / "your baby"; the
+CONTENT may have been written for pregnant women, take the facts but never carry
+over its pregnant-reader framing.* Retest: "early stages of **IVF**", zero leaks.
+
+The general lesson, now for the fourth time: **a small model needs blunt,
+exemplified instructions** — and, newly, **grounding content carries its own
+register, which can override framing instructions**. Real TTC content (Job 3) is
+the durable fix.
+
+### Job 2 — The TTC app door
+
+**The live bug, fixed.** `global_ask_fab.dart` decided which Ask Veda to open by
+asking "is the *parenting* route on the stack?" — so TTC fell through to the
+**pregnancy** screen and got pregnancy framing plus a meaningless `week`. The
+observer now also tracks `ttc/today`, and `_open()` is a three-way branch:
+**TTC → parenting → pregnancy** (TTC first, being the innermost stage stack).
+
+**`TtcAskVedaScreen`** (`lib/screens/ttc/ttc_askveda_screen.dart`) — the third
+door onto the same 7-section feed, styled with the **TTC design layer**
+(`TtcCard`, `ttcFraunces/ttcJakarta/ttcBody`, the TTC palette) rather than the
+pregnancy purple, so it reads as the same app. Bilingual throughout (`t.hinglish`).
+Suggestion cards come from the couple's **current chapter**
+(`ttcChapterContent[chapter].askVeda(hi)`), so the door opens with questions that
+already fit where they are.
+
+**Chapter suggestions wired** — `_AskVedaCard` in `ttc_chapter_screen.dart` went
+from `ttcSoon(context, 'Ask Veda')` to opening the screen with the question
+pre-filled.
+
+**Partner entry, with the privacy rule in code.** The TTC data model keeps
+`ttc_cycles` own-row so a partner can never read her cycle — he sees only the
+chapter she publishes. Sending her **cycle day from his device would route around
+that rule on the client side**. So the screen takes `partnerMode`, and his card
+passes `partnerMode: true`, which sends `chapter` and **never `cycle_day`**. Both
+the screen header and the card carry a "do not remove this flag" comment, because
+this is the kind of thing a later refactor deletes as redundant.
+
+Verified: `flutter analyze` clean across `lib/screens/ttc/`, and the **full
+1099-test suite passes**.
+
+### Job 3 — The TTC corpus (the bulk)
+
+Same move that took parenting from 19 chunks to 900+: the knowledge lived in Dart
+files the service couldn't see. `tool/export_ttc_corpus.dart` exports the eight
+`lib/ttc/` data files → `ingest/import_corpus.py` → `veda_knowledge` → re-ingest.
+
+**927 → 1251 chunks** (324 TTC docs). Kinds: insights, myths, chapter sections,
+tests, can-I verdicts, products, partner missions/briefs, offerings, trackers,
+nutrition, movement.
+
+**Bilingual, properly.** The handoff was explicit that *"a Hinglish question should
+retrieve the Hinglish chunk"* — but the ingest only embeds `body`, so storing
+`body_hi` alongside would leave Hinglish **unsearchable**. So each item is emitted
+**twice**: an English doc and a `_hi` twin, both embedded. Verified: asking
+*"fertile window kab hota hai?"* retrieves the `_hi` twins and answers in Hinglish.
+
+**The honesty half is preserved.** Products carry `watchOut` with the same weight
+as `lookFor` — several entries exist mainly to talk a couple *out* of buying
+something, and dropping that turns a research page into an advert. Asserted on
+export: all 16 product docs contain it.
+
+**Two bugs the twins created — and both had to be fixed here, because I created
+them:**
+1. **Duplicate cards.** The En and Hi twins are *different rows*, so deduping by
+   source id let the same offering appear twice, once per language. Now deduped on
+   the **base doc id** (`…_hi` stripped). Because results are similarity-ordered,
+   the twin matching the question's language naturally wins.
+2. **Mixed-language feeds.** An English question could still show a Hinglish card
+   title. Added a `lang` field (`en`/`hi`) end-to-end; `en` hides `_hi` cards
+   entirely, `hi` prefers them but falls back to English where no twin exists.
+
+**Deep-linking now works** because the doc-id namespace exists: `ttcinsight_` and
+`ttcoffer_` open the exact item; `ttctest_`/`ttccani_`/`ttcprod_` open their
+library screens; everything pushes **over** Ask Veda so Back returns to the
+conversation.
+
+**Verified live** — questions that had nothing to ground on an hour earlier:
+| Question | Result |
+|---|---|
+| "when is my fertile window?" | correct 6-day answer, from `ttcmyth_one_fertile_day` |
+| "can I drink coffee…?" | verdict up front, from `ttccani_chai` |
+| "what is an AMH test…?" | correctly says it does **not** predict natural conception (`ttcinsight_amh_meaning`) + 2 products + 4 services |
+| "fertile window kab hota hai?" | answered in Hinglish from the `_hi` twins |
+| "what happens during labour?" *(asked by a TTC user)* | full pregnancy answer — **no gating**, as required |
+
+### Job 4 — Tests (prompted by a fair review)
+
+The TTC work shipped **correct but untested**. The review that caught it made the
+right argument: the rule that *his device never sends her cycle day* was protected
+by nothing but a code comment reading "do not simplify that away" — and that is
+exactly the kind of line a future refactor deletes in good faith. If it goes, the
+client quietly routes around the Postgres rule that makes `ttc_cycles` own-row,
+and **nothing looks broken.**
+
+The app repo now has `test/ttc_askveda_test.dart` (16 tests, written by that
+reviewer) pinning the FAB routing, the partner-mode guard, the partner-safe
+chapter accessor, and the absence of a `domain:` filter.
+
+That review applies just as hard to **this** repo, which had **zero tests** — and
+which holds the more dangerous rules. Added `tests/` (67 tests, pure functions,
+no network or DB):
+
+| File | Pins |
+|---|---|
+| `test_safety.py` | ectopic routed with **same-day** wording (not the generic message), OHSS → the treating clinic, the pre-existing pregnancy rules still fire, messages stay calm — **and ordinary questions are never flagged**, since a red flag short-circuits RAG entirely |
+| `test_ttc_context.py` | `cycle_day` stays **out** of the cache key (asserted on the signature), chapter/path split buckets, TTC framing says "NOT pregnant" and keeps its counter-examples, ≥12 months changes the register, the labelled-output parser incl. the two bugs it already had |
+| `test_sections.py` | kind → section routing, the relevance floor, every section key always present, and the two bilingual-twin failures (duplicate cards, a Hinglish card shown to an English reader) |
+| `test_no_answer.py` | every decline phrasing the live model has actually produced — this detector has been wrong three times, and each miss silently costs a logged content gap *and* the web fallback |
+
+**Verified the tests have teeth**, which matters more than the count: emptying the
+ectopic phrase list, swapping the ectopic message for the generic one, and
+reverting the dedup to row-id keying were each simulated, and each would fail the
+suite.
+
+Run with `python -m pytest tests/ -q`.
+
+**The lesson:** live verification proves it works *today*; a test is what stops it
+being deleted tomorrow. For rules whose failure is **silent** — a safety route, a
+privacy guard, a cost bucket — the test is the only real protection.
+
+### Job 5 — `timing_ownership`, and making a two-repo contract visible
+
+The app terminal added a field to `AskVedaService.ask()` — and **this service
+silently dropped it**. Pydantic ignores what it doesn't declare: no error, no
+4xx, no log. The app sent `timing_ownership` for days and the framing it existed
+to drive never ran. Nothing looked broken.
+
+**Their design insight was right, and it's now implemented.** Who owns the
+cycle's timing is *more decisive than the treatment*, because the same `ivf` can
+mean two opposite things:
+
+| ownership | What is true for her |
+|---|---|
+| `parentveda` | Her own cycle — fertile window, ovulation signs, period due date all meaningful |
+| `clinic_guided` | Clinic involved, but **her LH and temperature are exactly what it acts on** — a natural-cycle transfer or an LH-timed IUI. Don't dismiss her signals |
+| `clinic_controlled` | Fully medicated. Her body's signals are **not a guide**. No fertile window, no ovulation prediction, no "your period is late" — luteal support delays it, so that reads as false hope. **The wait ends in the clinic's beta blood test** |
+
+So on a medicated cycle the framing forbids that whole vocabulary, and the
+`cycle_day` is suppressed too — day 22 of a medicated cycle isn't day 22 of hers,
+and quoting it back invites the wrong inference.
+
+**Ownership also had to enter the cache key** (`ttc:<chapter>:<path>:<ownership>`).
+Sharing one cached answer between a guided and a controlled IVF cycle would tell
+one of those women something untrue about her own body.
+
+Proven on a real question — *"my period has not come yet, does that mean it
+worked?"*:
+* `parentveda` → *"only a test can tell you for sure"*
+* `clinic_controlled` → *"The clinic's **beta blood test** will confirm… **not your period**"*
+
+### The systemic fix — the failure mode, not just this instance
+
+A field silently doing nothing is a *class* of bug, and it will recur. Two guards:
+
+1. **Loud, not silent.** `AskRequest` now keeps unknown fields
+   (`extra="allow"` + `unknown_fields()`), and `/ask` prints anything it doesn't
+   understand. A one-sided contract change shows up in the console instead of
+   vanishing. `tests/test_wire_contract.py` keeps that alarm wired, and asserts
+   every key the app sends is a field here *and* a parameter of `answer()` —
+   because a field can be accepted and still never passed on, which is just as
+   silent.
+2. **The app repo's `CLAUDE.md`** — auto-loaded into every Claude Code session
+   there — gained an **"Ask Veda lives in a different repository"** section: where
+   each repo is, what each owns, and the rule that matters:
+
+   > If your change needs the service, **say so and ask the user for access to
+   > `C:\Projects\parentveda-askveda`**. Don't ship the app half alone assuming
+   > the service will catch up. If you only change one side, write down what the
+   > other still needs.
+
+   That's the real answer to "do I have to ping you every time": no — the file
+   makes the other terminal **stop and ask** instead of half-shipping. (Its
+   mirrored copy `docs/CHATGPT-BRIEF.md` was updated in the same pass, per that
+   file's own rule.)
+
+**The lesson:** a cross-repo contract with no enforcement isn't a contract, it's
+an assumption. Make the mismatch *visible* at runtime, and make the boundary
+*discoverable* to whoever arrives next.
+
+### Job 6 — Truth hierarchy and the probability rule (a second good review)
+
+A review flagged three gaps, all prompt-side. I checked each by trying to
+*produce* the failure rather than reasoning about it, and all three were live:
+
+| Asked | What it answered **before** |
+|---|---|
+| "my doctor told me to stop folic acid but I read I should continue — who's right?" | **"You should continue taking folic acid"** — overriding her clinician |
+| "my scan said 8w5d, the app says 9w2d — which is right?" | **"The app is right"** — backwards |
+| 20 months trying, "is it normal it hasn't happened?" | **"there's probably nothing wrong"** |
+
+The first violates a stated product invariant (*"the app must never contradict a
+user's own clinician"*). The second is clinically wrong — a first-trimester dating
+scan outranks arithmetic from a last period, and the answer affects due date and
+screening windows. The third is the subtlest: not a number, but **unearned
+reassurance**, which at 12+ months can delay someone seeking help.
+
+**The fix wasn't invention — the app had already decided all three.**
+`lib/services/truth_hierarchy.dart` ranks sources and says so plainly: the
+treating clinician *"beats everything"*; a dating scan *"outranks any gestational
+age we calculate"*; and a population estimate is *"true of a population, never a
+statement about this family — the weakest claim we can make."* The service simply
+didn't know. So the rules were **imported**, not authored:
+
+* **Rule 6 — her clinician outranks us**, and outranks the CONTENT. Never tell her
+  to override it, never answer "who is right?" in our own favour; if the content
+  differs, say they differ and put it back to the clinician who knows her history.
+  The full ranking is stated so it mirrors the app's enum.
+* **Rule 7 — a population statistic is never a statement about her.** Never turn
+  "most couples conceive within a year" into her odds, chance, success rate or
+  timeline, *not even encouragingly*. Judging whether anything IS wrong belongs to
+  a doctor — route there warmly instead of reassuring.
+* **The `MEANING` label** — whose entire job is to personalise, which is precisely
+  why it's where a population fact becomes a personal forecast — now says
+  explicitly: *not a prediction; no odds, no chance, no success rate, no timeline,
+  no reassurance that nothing is wrong.*
+* **Pregnancy framing** gained the missing half: this week is **calculated, not
+  measured**, so a dating scan she quotes beats it *"rather than defending the
+  app's figure."*
+
+Afterwards, the same three questions answered: *"Your doctor is right."* · *"The
+scan result is more accurate than the app's calculation."* · and the population
+fact stated plainly without becoming her odds.
+
+**No wire change, no app change** — worth stating, because this repo's other
+recurring failure is the two-repo one. A prompt rule that a scan outranks a
+calculation covers the risk without a `due_date_from_clinic` field and the
+cross-repo dependency it would create.
+
+`tests/test_truth_and_probability.py` pins all of it — including the exact
+phrases that leaked, since a polite version of the rule had already lost once.
+
+**A follow-up review caught a real one: the hierarchy was abbreviated, and the
+test pinned the abbreviation.** Rule 6 listed six of the app's eight ranks —
+`verifiedMedication` and `deviceData` were missing — while the test was called
+`test_the_full_truth_ranking_is_stated` and its docstring claimed the two repos
+"must not drift", checking five levels. Nothing was *inverted*, so the repos
+didn't contradict each other; but two ordinary questions had no rule behind them,
+and **the test's name was what would have stopped anyone noticing.**
+
+Both levels added, and the test renamed to `test_all_eight_truth_levels_are_stated`
+with each assertion annotated with the `TruthSource` case it mirrors. The two
+questions now answer correctly:
+* *"my ring says day 12 but I felt it on day 14"* → *"Trust your body's signal
+  (day 14) over the ring's estimate"* — matching the app's deliberate ordering
+  ("she knows the context a sensor cannot").
+* *"my prescription says 200mg but the article says 400mg"* → *"Ask your doctor
+  about the dosage."* Central to IVF, where the cycle **is** a medication schedule.
+
+**The lesson is about the test, not the rule:** a test whose name claims more than
+it verifies is worse than no test, because it converts a gap into apparent
+coverage. Name a test after what it actually checks.
+
+### What's next (Job 7)
 Ingest **videos** (whatever host — Bunny Stream / Cloudflare Stream; the backend
 just stores each video's title + keywords + a playback URL) to switch the Videos
 sub-section from "Coming soon" to real content, and wire the video deep-link to the
