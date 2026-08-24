@@ -15,13 +15,49 @@ sending), so this whole path is testable today with a simulated payload.
 """
 
 import httpx
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Header, Query, Request
+from fastapi.responses import PlainTextResponse
 
 from app.answer import answer
 from app.config import settings
-from app.gateway import parse_msg91_inbound
+from app.gateway import parse_inbound
 
 router = APIRouter()
+
+
+def _send_via_meta(to: str, text: str) -> bool:
+    """Reply through Meta's WhatsApp Cloud API (the free test number).
+
+    Only works inside the 24-hour service window opened when SHE messages first
+    — which is exactly AskVeda's shape, and why replies cost nothing. Outside
+    that window Meta requires a pre-approved template and rejects free text.
+    """
+    url = (f"https://graph.facebook.com/v21.0/"
+           f"{settings.meta_phone_number_id}/messages")
+    try:
+        res = httpx.post(
+            url,
+            headers={"Authorization": f"Bearer {settings.meta_access_token}",
+                     "Content-Type": "application/json"},
+            json={
+                "messaging_product": "whatsapp",
+                "recipient_type": "individual",
+                "to": to,
+                "type": "text",
+                # preview_url renders a link card for the first URL in the body —
+                # how a product or article recommendation gets a picture without
+                # us uploading one.
+                "text": {"preview_url": True, "body": text},
+            },
+            timeout=15,
+        )
+        ok = res.status_code < 300
+        if not ok:
+            print(f"[whatsapp META SEND FAILED] {res.status_code} {res.text[:250]}")
+        return ok
+    except Exception as e:
+        print(f"[whatsapp META SEND ERROR] {e}")
+        return False
 
 
 def send_whatsapp_message(to: str, text: str) -> bool:
@@ -31,6 +67,11 @@ def send_whatsapp_message(to: str, text: str) -> bool:
     MSG91's current API docs when the account exists — endpoint and body shape
     are provider-specific and we haven't been able to verify them yet.
     """
+    # Meta Cloud API (the test number) takes precedence when configured.
+    if (not settings.whatsapp_mock_send and settings.meta_access_token
+            and settings.meta_phone_number_id):
+        return _send_via_meta(to, text)
+
     if settings.whatsapp_mock_send or not settings.msg91_auth_key:
         preview = text.replace("\n", " ")[:160]
         print(f"[whatsapp MOCK SEND] -> +{to}: {preview}")
@@ -63,6 +104,26 @@ def send_whatsapp_message(to: str, text: str) -> bool:
         return False
 
 
+@router.get("/whatsapp/webhook", response_class=PlainTextResponse)
+def whatsapp_verify(
+    hub_mode: str | None = Query(default=None, alias="hub.mode"),
+    hub_verify_token: str | None = Query(default=None, alias="hub.verify_token"),
+    hub_challenge: str | None = Query(default=None, alias="hub.challenge"),
+) -> str:
+    """Meta's one-time webhook handshake.
+
+    When you save the callback URL, Meta sends a GET with hub.mode=subscribe and
+    the verify token you typed into the dashboard. We must echo hub.challenge
+    back as PLAIN TEXT or Meta rejects the URL — a JSON body fails even when the
+    token is right, which is a confusing hour to lose.
+    """
+    if (hub_mode == "subscribe"
+            and hub_verify_token
+            and hub_verify_token == settings.meta_verify_token):
+        return hub_challenge or ""
+    return ""
+
+
 @router.post("/whatsapp/webhook")
 async def whatsapp_webhook(
     request: Request,
@@ -81,7 +142,7 @@ async def whatsapp_webhook(
         return {"status": "bad_payload"}
 
     # 2) Normalize. None = a receipt/status event, not a question → ignore.
-    msg = parse_msg91_inbound(payload)
+    msg = parse_inbound(payload)
     if msg is None:
         return {"status": "ignored"}
 

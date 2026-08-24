@@ -98,8 +98,21 @@ class Settings(BaseSettings):
     # A shared secret we require on the webhook, so strangers can't POST fake
     # messages at us. Configure the same value in MSG91's webhook settings.
     msg91_webhook_secret: str | None = None
-    # True = log the reply instead of calling MSG91. Flip to False when live.
+    # True = log the reply instead of calling a provider. Flip to False when live.
     whatsapp_mock_send: bool = True
+
+    # --- Meta WhatsApp Cloud API (the free TEST number) ---
+    # Lets us test a real WhatsApp round-trip before a company, a real number or
+    # business verification exist. MSG91 resells this same Cloud API, so the
+    # payloads are close to what production will send.
+    #   meta_verify_token   — any string you invent; Meta echoes it back once when
+    #                         you register the webhook (GET handshake).
+    #   meta_access_token   — temporary token from the app dashboard (~24h) or a
+    #                         permanent System User token.
+    #   meta_phone_number_id— the TEST number's id (not the number itself).
+    meta_verify_token: str | None = None
+    meta_access_token: str | None = None
+    meta_phone_number_id: str | None = None
 
 
 # One shared instance, imported everywhere as: `from app.config import settings`

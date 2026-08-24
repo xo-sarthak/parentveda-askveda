@@ -1376,7 +1376,85 @@ questions now answer correctly:
 it verifies is worse than no test, because it converts a gap into apparent
 coverage. Name a test after what it actually checks.
 
-### What's next (Job 7)
+### Job 7 — A real WhatsApp round-trip, on Meta's free test number
+
+Phase 6 built the WhatsApp door but could only be tested with simulated payloads,
+because a live number needs a company and business verification. It turns out you
+don't need either **to test**: Meta gives every developer app a **free test
+number** with no verification and no billing.
+
+Added `parse_meta_inbound()` alongside `parse_msg91_inbound()`, plus
+`parse_inbound()` which detects the provider from the payload shape (Meta batches
+under `entry[]`), a `GET /whatsapp/webhook` handshake, and `_send_via_meta()`.
+`tests/test_gateway.py` pins both parsers.
+
+Two things the Meta payload forces you to handle, both silent if you don't:
+* **Delivery receipts arrive on the same URL** as real messages (`value.statuses`
+  instead of `value.messages`). Answering one costs an LLM call to reply to a
+  machine event.
+* **Non-text messages** (image, audio, sticker, location) have no `text.body`.
+  Replying anyway means confidently answering something you never read.
+
+### The trap that cost the most time — and how it was found
+
+Everything the dashboard showed said **working**: webhook URL verified ✅,
+`messages` field subscribed ✅, green ticks ✅. Messages arrived at the number.
+**Nothing reached the webhook.** No error, anywhere.
+
+The cause: the Configuration screen registers **your app's** webhook URL and
+fields. It does **not** subscribe your **WABA** to your app — the test console
+silently binds the WABA to Meta's own first-party app instead
+(`WA DevX Webhook Events 1P App`). Your app is simply not on the list, and the
+dashboard never shows that list.
+
+**How it was diagnosed** — by asking Meta what *it* believed, not by re-reading
+our code:
+
+1. **The server log ruled the code out.** Meta's verification `GET` arrived and
+   returned 200, but there was **no POST at all**. So the URL was right and
+   reachable; the events were never being sent.
+2. **`GET /debug_token`** returned the app id — and, usefully,
+   `granular_scopes.target_ids` exposed the **WABA id**, which the dashboard
+   doesn't show plainly.
+3. **`GET /{WABA_ID}/subscribed_apps`** was the smoking gun: it listed exactly one
+   app, Meta's internal one. Ours was absent.
+4. **Fix:** `POST /{WABA_ID}/subscribed_apps` → `{"success": true}`. The next
+   message arrived immediately.
+
+```
+GET  https://graph.facebook.com/v21.0/{WABA_ID}/subscribed_apps   # who is subscribed?
+POST https://graph.facebook.com/v21.0/{WABA_ID}/subscribed_apps   # subscribe this app
+```
+
+**Check this first** whenever a verified webhook receives nothing — including when
+the real number replaces the test one, because the same binding has to be redone.
+
+### The general lesson (worth more than the fix)
+
+**The Meta dashboard is a UI over the Graph API — anything you can click, you can
+query.** That matters twice over:
+
+* **For debugging:** the dashboard shows you *its* view, which omitted the one
+  fact that mattered. The API had the truth. When a console says everything is
+  fine and reality disagrees, ask the API directly.
+* **For secrets:** the token *is* the identity. This whole fix was carried out
+  from a machine that was never logged into Facebook, using only the token in
+  `.env` — no browser session involved. A permanent System User token is
+  therefore as sensitive as the Supabase service key.
+
+### Operational notes while testing
+* The **temporary token expires ~24h** (it expired mid-session here — every call
+  returned `OAuthException 190`). Refresh in API Setup, then **restart the
+  server**, since `.env` is only read at startup.
+* The **cloudflared tunnel URL changes on every restart**, which means re-saving
+  the webhook in Meta.
+* Both problems disappear on deploy: a stable HTTPS URL and a permanent token.
+* Replies only work inside the **24-hour service window** she opens by messaging
+  first — which is AskVeda's natural shape, and why the conversation is free.
+* First live answers were **cache hits at ₹0.00**: questions already asked in the
+  app were answered instantly on WhatsApp. The cache is shared across channels.
+
+### What's next (Job 8)
 Ingest **videos** (whatever host — Bunny Stream / Cloudflare Stream; the backend
 just stores each video's title + keywords + a playback URL) to switch the Videos
 sub-section from "Coming soon" to real content, and wire the video deep-link to the
