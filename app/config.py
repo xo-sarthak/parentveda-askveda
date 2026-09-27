@@ -40,7 +40,16 @@ class Settings(BaseSettings):
     #   Groq → Together/OpenAI/etc. = change llm_base_url + llm_model, nothing else.
     llm_api_key: str
     llm_base_url: str = "https://api.groq.com/openai/v1"   # Groq's OpenAI-compatible endpoint
-    llm_model: str = "llama-3.1-8b-instant"               # cheap, fast 8B open model
+    # 2026-09-27: Groq retired llama-3.1-8b-instant, so every answer failed
+    # with model_not_found. gpt-oss-20b is the user's choice: tested on our
+    # prompts (format kept, grounded, cites the TTC reads), fast, cheap. It
+    # "thinks" before answering, so `llm_reasoning_effort` keeps that low.
+    # Was: llm_model: str = "llama-3.1-8b-instant"
+    llm_model: str = "openai/gpt-oss-20b"
+    # low | medium | high. Grounded summarising, not puzzle-solving: low keeps
+    # the hidden reasoning (billed as output tokens) and the wait small. Sent
+    # only to models that take it (see app/llm.py).
+    llm_reasoning_effort: str = "low"
     llm_temperature: float = 0.2  # low = factual/consistent; we want grounded, not creative
 
     # --- Retrieval (Phase 3) ---
@@ -57,10 +66,13 @@ class Settings(BaseSettings):
     cache_similarity_threshold: float = 0.95  # reuse a cached answer only if THIS close
     rate_limit_per_day: int = 20              # max questions per user per day
     daily_spend_cap_usd: float = 2.0          # global circuit breaker for today's spend
-    # Reference token prices (Groq llama-3.1-8b-instant) — used to LOG cost + enforce
-    # the cap. Free tier = $0 actually charged; these make cost measurable for later.
-    llm_price_input_per_1m_usd: float = 0.05
-    llm_price_output_per_1m_usd: float = 0.08
+    # Reference token prices (Groq openai/gpt-oss-20b, 2026-09-27; confirm on
+    # https://groq.com/pricing) — used to LOG cost + enforce the cap. Free tier =
+    # $0 actually charged; these make cost measurable for later. With the old
+    # model's prices the cap would have measured about half the real spend.
+    # Were (llama-3.1-8b-instant): 0.05 / 0.08.
+    llm_price_input_per_1m_usd: float = 0.075
+    llm_price_output_per_1m_usd: float = 0.30
 
     # --- App door / auth (Phase 5) ---
     # In production the app sends its Supabase login token; we verify it with this

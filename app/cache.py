@@ -54,6 +54,7 @@ def stage_key_for(
     chapter: str | None = None,
     ttc_path: str | None = None,
     timing_ownership: str | None = None,
+    treatment_step: str | None = None,
 ) -> str:
     """Bucket the asker by LIFE STAGE so cached answers never cross stages.
 
@@ -72,9 +73,17 @@ def stage_key_for(
     medicated one (her signals are noise, and the wait ends in a beta test).
     Sharing one cached answer between those two would tell one of them something
     untrue about her own body.
+
+    TREATMENT STEP is in the key for the same reason, more sharply: the wait
+    ("nobody knows yet") and a positive result ("an early pregnancy") give
+    OPPOSITE answers to the same question, so they must never share an entry.
+    It has at most ten values and is only sent while a clinic owns the cycle,
+    so the split is small. The day count inside a step is NOT sent, like the
+    cycle day and for the same reason.
     """
     if (stage or "").lower() in ("trying", "ttc", "trying_to_conceive"):
-        return f"ttc:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
+        return (f"ttc:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
+                f":{treatment_step or '-'}")
     if child_age_months is not None:
         return f"cm{child_age_months}"  # parenting: child age in months
     if week:

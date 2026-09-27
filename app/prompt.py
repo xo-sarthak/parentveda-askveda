@@ -115,20 +115,113 @@ _TIMING_OWNERSHIP = {
 }
 
 
+# WHERE a clinic round stands today. The app sends this only while a clinic owns
+# the cycle (the same resolver its home screen uses, so the answer and the home
+# never disagree), as the name of its TtcRoundPhase enum
+# (lib/ttc/ttc_treatment_round.dart). Planned and own-cycle are never sent.
+#
+# Why a step matters more than a chapter here: "she is NOT pregnant" is true
+# through stimulation, false after a positive test, and UNKNOWN in the wait. A
+# fixed opener told a woman whose blood test had just come back positive that she
+# was not pregnant. So the step decides which of three truths the opener states.
+_STEP_NOT_PREGNANT = "not_pregnant"
+_STEP_UNKNOWN = "unknown"
+_STEP_EARLY_PREGNANCY = "early_pregnancy"
+
+_TREATMENT_STEPS = {
+    "gettingready": (_STEP_NOT_PREGNANT,
+        "Her treatment round is in its getting-ready part (a pill cycle, "
+        "down-regulation, a baseline scan, or estrogen before a frozen transfer)."),
+    "stimulation": (_STEP_NOT_PREGNANT,
+        "She is in the stimulation part of her round: daily injections or "
+        "tablets, with monitoring scans and blood tests at the clinic."),
+    "trigger": (_STEP_NOT_PREGNANT,
+        "She has had, or is about to have, her trigger shot. Its timing is set "
+        "to the hour by her clinic and must be followed exactly."),
+    "procedure": (_STEP_NOT_PREGNANT,
+        "Today is her egg collection or IUI day."),
+    "embryodays": (_STEP_NOT_PREGNANT,
+        "Her eggs have been collected and the lab is growing the embryos. The "
+        "clinic calls with updates; the next step is a transfer or freezing."),
+    "transfer": (_STEP_UNKNOWN,
+        "She has had an embryo transfer, or it is today."),
+    "waiting": (_STEP_UNKNOWN,
+        "She is in the wait between her embryo transfer or IUI and her clinic's "
+        "blood test."),
+    "testday": (_STEP_UNKNOWN,
+        "It is her blood test day, or she is waiting to hear the result."),
+    "result": (_STEP_EARLY_PREGNANCY,
+        "Her clinic's blood test after this round was positive."),
+    "betweenrounds": (_STEP_NOT_PREGNANT,
+        "Her last treatment round has closed without a pregnancy, and she is "
+        "between rounds. Do not assume why it closed or what she will do next."),
+}
+
+_OPENERS = {
+    _STEP_NOT_PREGNANT: "She is TRYING TO CONCEIVE — she is NOT pregnant.",
+    _STEP_UNKNOWN: (
+        "She is TRYING TO CONCEIVE and does NOT yet know whether she is "
+        "pregnant. Nobody can know until her clinic's blood test."
+    ),
+    _STEP_EARLY_PREGNANCY: (
+        "She has just had a POSITIVE pregnancy blood test after fertility "
+        "treatment. This is a very early pregnancy that her clinic is monitoring."
+    ),
+}
+
+_CLOSERS = {
+    _STEP_NOT_PREGNANT: (
+        "CRITICAL: she is not pregnant, so NEVER write phrases like 'during your "
+        "pregnancy', 'in early pregnancy', 'your baby', 'as your bump grows' or "
+        "'many pregnant women'. Some of the CONTENT you are given may have been "
+        "written for pregnant women — take the facts from it but NEVER carry over "
+        "its pregnant-reader framing. Speak to someone who is hoping to conceive. "
+        "Never promise a timeline or an outcome, and never imply the delay is her "
+        "fault."
+    ),
+    _STEP_UNKNOWN: (
+        "CRITICAL: nobody knows yet whether this worked. Do NOT write as if she "
+        "is pregnant ('your baby', 'during your pregnancy') and do NOT write as "
+        "if it has failed. Never read her symptoms as a sign either way: the "
+        "medicines she is on cause most of them. Do not suggest a home test "
+        "before the blood test; the trigger medicine can show a false positive. "
+        "Never predict the result, give odds, or promise an outcome. Her clinic's "
+        "instructions come first."
+    ),
+    _STEP_EARLY_PREGNANCY: (
+        "CRITICAL: do NOT tell her she is not pregnant. It is very early: never "
+        "promise how it will go, never give odds, and never read a symptom or a "
+        "number as a sign either way. Her clinic plans what comes next (repeat "
+        "blood tests, the first scan, when to stop or keep taking her medicines), "
+        "so point her back to them for anything about her own care. Keep the "
+        "tone warm and steady, not celebratory: she may be anxious."
+    ),
+}
+
+
 def describe_ttc_stage(
     chapter: str | None = None,
     ttc_path: str | None = None,
     months_trying: int | None = None,
     cycle_day: int | None = None,
     timing_ownership: str | None = None,
+    treatment_step: str | None = None,
 ) -> str:
     """Framing note for someone TRYING TO CONCEIVE.
 
     The register here is delicate: she is NOT pregnant, and how long she has been
     trying changes everything about how an answer should land. "We started last
     month" and "we have been trying two years" must never read the same.
+
+    The one exception is a clinic round: [treatment_step] decides whether "not
+    pregnant" is true, unknown (the wait) or false (a positive result). An
+    unknown step falls back to the plain "not pregnant" framing.
     """
-    bits = ["She is TRYING TO CONCEIVE — she is NOT pregnant."]
+    step = _TREATMENT_STEPS.get((treatment_step or "").lower())
+    truth = step[0] if step else _STEP_NOT_PREGNANT
+    bits = [_OPENERS[truth]]
+    if step:
+        bits.append(step[1])
     ch = _TTC_CHAPTERS.get((chapter or "").lower())
     if ch:
         bits.append(f"Right now she is {ch}.")
@@ -153,15 +246,7 @@ def describe_ttc_stage(
             bits.append(f"They have been trying for {months_trying} months.")
         else:
             bits.append(f"They started trying about {months_trying} month(s) ago.")
-    bits.append(
-        "CRITICAL: she is not pregnant, so NEVER write phrases like 'during your "
-        "pregnancy', 'in early pregnancy', 'your baby', 'as your bump grows' or "
-        "'many pregnant women'. Some of the CONTENT you are given may have been "
-        "written for pregnant women — take the facts from it but NEVER carry over "
-        "its pregnant-reader framing. Speak to someone who is hoping to conceive. "
-        "Never promise a timeline or an outcome, and never imply the delay is her "
-        "fault."
-    )
+    bits.append(_CLOSERS[truth])
     return " ".join(bits)
 
 

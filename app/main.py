@@ -9,13 +9,20 @@ Routes so far: `/health` (Phase 0) and `POST /ask` (Phase 5, the app door). The
 WhatsApp webhook arrives in Phase 6 — it will call the SAME brain as `/ask`.
 """
 
-from fastapi import FastAPI
+import logging
+import threading
+
+from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.channels.admin import _authorized
 from app.channels.admin import router as admin_router
 from app.channels.app_api import router as app_router
 from app.channels.whatsapp import router as whatsapp_router
 from app.config import settings
+from app.llm import probe
+
+log = logging.getLogger("askveda")
 
 # `app` IS the application (an ASGI app object). FastAPI builds it; uvicorn runs it.
 app = FastAPI(title=settings.app_name, version="0.1.0")
@@ -50,3 +57,33 @@ def health() -> dict:
         "service": settings.app_name,
         "env": settings.environment,
     }
+
+
+@app.on_event("startup")
+def _check_llm_on_startup() -> None:
+    """Say loudly, once, if the configured model no longer answers (2026-09-27).
+
+    In a thread, so a slow provider never delays the service coming up. The
+    service still starts either way: the offline answer engine in the app keeps
+    working, and /health stays green for the host's liveness checks.
+    """
+    def run() -> None:
+        r = probe()
+        if r["ok"]:
+            log.warning("[llm] %s answers", r["model"])
+        else:
+            log.error("[llm] %s DOES NOT ANSWER: %s. Every Ask Veda answer will "
+                      "fail until this is fixed. %s", r["model"], r["reason"], r["detail"])
+            print(f"\n!!! [llm] {r['model']} does not answer: {r['reason']}\n")
+
+    threading.Thread(target=run, daemon=True).start()
+
+
+@app.get("/health/llm")
+def health_llm(x_reindex_secret: str | None = Header(default=None)) -> dict:
+    """Does the configured model answer right now? Guarded by the admin secret,
+    because each call spends a few tokens and this is a public URL."""
+    if not _authorized(x_reindex_secret):
+        return {"status": "unauthorized"}
+    return probe()
+

@@ -71,6 +71,64 @@ def test_ownership_splits_the_cache_bucket_even_on_the_same_path():
     assert guided != controlled
 
 
+# --- treatment step ---------------------------------------------------------
+# "She is NOT pregnant" is true through stimulation, UNKNOWN in the wait and
+# FALSE after a positive blood test. A fixed opener told a woman with a
+# positive result that she was not pregnant; the step now decides the truth.
+
+def _ivf(step):
+    return describe_ttc_stage("theWaitingDays", "ivf", 18, None,
+                              timing_ownership="clinic_controlled",
+                              treatment_step=step)
+
+
+def test_the_step_splits_the_cache_bucket():
+    """The wait and a positive result answer the same question oppositely."""
+    keys = {
+        cache.stage_key_for(stage="trying", chapter="theWaitingDays",
+                            ttc_path="ivf", timing_ownership="clinic_controlled",
+                            treatment_step=s)
+        for s in (None, "waiting", "testDay", "result", "betweenRounds")
+    }
+    assert len(keys) == 5
+
+
+def test_a_positive_result_is_never_told_she_is_not_pregnant():
+    note = _ivf("result")
+    assert "NOT pregnant" not in note
+    assert "not pregnant" not in note.replace("do NOT tell her she is not pregnant", "")
+    assert "POSITIVE" in note
+    assert "never give odds" in note
+
+
+def test_the_wait_is_unknown_not_negative():
+    for step in ("waiting", "testDay", "transfer"):
+        note = _ivf(step)
+        assert "NOT pregnant" not in note, step
+        assert "does NOT yet know" in note, step
+        assert "home test" in note, step
+
+
+def test_steps_before_transfer_keep_the_not_pregnant_framing():
+    for step in ("gettingReady", "stimulation", "trigger", "procedure",
+                 "embryoDays", "betweenRounds"):
+        note = _ivf(step)
+        assert "NOT pregnant" in note, step
+        assert "during your pregnancy" in note.lower(), step
+
+
+def test_an_unknown_step_falls_back_to_not_pregnant():
+    """A step name the service has not learned yet (the app grew a new phase)
+    must fail safe to the old framing, never to "pregnant"."""
+    assert "NOT pregnant" in _ivf("somethingNew")
+    assert "NOT pregnant" in _ivf(None)
+
+
+def test_the_step_is_read_case_insensitively():
+    """The app sends the enum's Dart name (testDay); the map is lower-case."""
+    assert _ivf("testDay") == _ivf("testday")
+
+
 def test_a_medicated_cycle_forbids_fertile_window_talk():
     note = describe_ttc_stage("theWaitingDays", "ivf", 18,
                               timing_ownership="clinic_controlled").lower()

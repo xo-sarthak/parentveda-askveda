@@ -31,6 +31,11 @@ class AskRequest(BaseModel):
     ttc_path: str | None = None          # natural | iui | ivf | …
     # parentveda | clinic_guided | clinic_controlled — who owns this cycle's timing
     timing_ownership: str | None = None
+    # Where a clinic round stands today (the app's TtcRoundPhase name:
+    # gettingReady … waiting, testDay, result, betweenRounds). Sent only while a
+    # clinic owns the cycle; decides whether "not pregnant" is true, unknown or
+    # false. Never sent from the partner's app.
+    treatment_step: str | None = None
     months_trying: int | None = None     # the strongest TTC personalisation signal
     lang: str | None = None              # 'en' | 'hi' — which bilingual twin to show
     domain: str | None = None            # optional retrieval hint, not a gate
@@ -99,6 +104,7 @@ def ask(
         cycle_day=body.cycle_day,
         ttc_path=body.ttc_path,
         timing_ownership=body.timing_ownership,
+        treatment_step=body.treatment_step,
         months_trying=body.months_trying,
         lang=body.lang,
         domain=body.domain,

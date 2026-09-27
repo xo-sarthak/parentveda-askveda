@@ -1,0 +1,38 @@
+# Does Ask Veda's model still answer? Once a day, and on demand.
+#
+# Written 2026-09-27, after Groq retired llama-3.1-8b-instant and every answer
+# failed silently for days. GitHub emails the repository owner when a scheduled
+# run fails, so a retired model, a revoked key or an exhausted limit becomes an
+# email the same morning. About 20 tokens a run.
+#
+# ONE-TIME SETUP (the repository owner, in GitHub → Settings → Secrets and
+# variables → Actions):
+#   · Secret   LLM_API_KEY   the gsk_... Groq key (use a key made for this job)
+#   · Variable LLM_MODEL     optional; the model the service runs, if it is set
+#                            by environment in production rather than in config
+name: llm-smoke
+
+on:
+  schedule:
+    - cron: "30 3 * * *"   # 03:30 UTC = 09:00 in India
+  workflow_dispatch: {}      # the "Run workflow" button
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Only what the probe imports: the settings loader and the model client.
+      - run: pip install openai pydantic-settings python-dotenv
+      - name: Ask the model for one word
+        env:
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          LLM_MODEL: ${{ vars.LLM_MODEL }}
+          # The settings class requires these; the probe never touches Supabase.
+          SUPABASE_URL: "https://unused.invalid"
+          SUPABASE_SERVICE_ROLE_KEY: "unused"
+        run: python -m scripts.llm_smoke

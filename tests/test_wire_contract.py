@@ -31,6 +31,7 @@ def test_a_known_field_is_not_reported_as_unknown():
     body = AskRequest(
         question="x", stage="trying", chapter="theWaitingDays",
         ttc_path="ivf", timing_ownership="clinic_controlled",
+        treatment_step="waiting",
         cycle_day=22, months_trying=18, lang="en",
     )
     assert body.unknown_fields() == []
@@ -43,7 +44,7 @@ def test_every_field_the_app_sends_is_understood_here():
     sent_by_app = {
         "question", "week", "trimester", "child_age_months",
         "stage", "chapter", "cycle_day", "ttc_path", "timing_ownership",
-        "months_trying", "lang", "domain",
+        "treatment_step", "months_trying", "lang", "domain",
     }
     known = set(AskRequest.model_fields)
     missing = sent_by_app - known
@@ -55,7 +56,7 @@ def test_context_fields_reach_the_brain():
     would be just as silent. Check answer() actually takes each one."""
     params = set(inspect.signature(answer).parameters)
     for field in ("stage", "chapter", "cycle_day", "ttc_path",
-                  "timing_ownership", "months_trying", "lang"):
+                  "timing_ownership", "treatment_step", "months_trying", "lang"):
         assert field in params, f"answer() cannot receive {field!r}"
 
 

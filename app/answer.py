@@ -149,6 +149,9 @@ def answer(
     # WHO owns the timing of this cycle — more decisive than ttc_path, because a
     # medicated cycle overrides her body's own signals entirely.
     timing_ownership: str | None = None,
+    # Where a clinic round stands today; decides whether "not pregnant" is
+    # true, unknown (the wait) or false (a positive result). See prompt.py.
+    treatment_step: str | None = None,
     months_trying: int | None = None,
     lang: str | None = None,   # 'en' | 'hi' — picks which bilingual twin is shown
     domain: str | None = None,
@@ -177,7 +180,7 @@ def answer(
     stage_key = cache.stage_key_for(
         week, trimester, child_age_months,
         stage=stage, chapter=chapter, ttc_path=ttc_path,
-        timing_ownership=timing_ownership,
+        timing_ownership=timing_ownership, treatment_step=treatment_step,
     )
     is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
@@ -200,7 +203,8 @@ def answer(
     top_sim = results[0]["similarity"] if results else 0.0
     stage_note = (
         describe_ttc_stage(chapter, ttc_path, months_trying, cycle_day,
-                           timing_ownership=timing_ownership)
+                           timing_ownership=timing_ownership,
+                           treatment_step=treatment_step)
         if is_ttc
         else describe_stage(week, trimester, child_age_months)
     )
