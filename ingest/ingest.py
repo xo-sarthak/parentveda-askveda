@@ -285,7 +285,17 @@ def ingest() -> None:
     chunk_rows: list[dict] = []
     counts: dict[str, int] = {}
     for table, (cols, _, _tf) in SOURCE_SPECS.items():
-        rows = _fetch_published(table, cols)
+        # ⚠️ ONE UNREADABLE TABLE MUST NOT STOP THE REST (2026-09-30). The
+        # service role still lacks SELECT on recipes, reads and products (the
+        # three grants in askveda.md), and a permission error here used to end
+        # the whole run before anything was embedded, leaving whatever the
+        # caller had cleared empty. Now the table is skipped, loudly.
+        try:
+            rows = _fetch_published(table, cols)
+        except Exception as e:  # noqa: BLE001 — any read failure skips the table
+            print(f"[SKIP] {table}: {str(e)[:160]}")
+            counts[table] = 0
+            continue
         counts[table] = len(rows)
         for row in rows:
             chunk_rows.extend(_chunk_rows_for(table, row))

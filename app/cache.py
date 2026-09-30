@@ -82,7 +82,11 @@ def stage_key_for(
     cycle day and for the same reason.
     """
     if (stage or "").lower() in ("trying", "ttc", "trying_to_conceive"):
-        return (f"ttc:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
+        # "s1" = scoped to the stage (2026-09-30, app/answer.py scope_domain).
+        # Answers cached before the scope pointed at pregnancy content too; a
+        # new key means none of them is served again. Kept for revert: the
+        # key without ":s1".
+        return (f"ttc:s1:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
                 f":{treatment_step or '-'}")
     if child_age_months is not None:
         return f"cm{child_age_months}"  # parenting: child age in months

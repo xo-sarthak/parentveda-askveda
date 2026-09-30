@@ -1,7 +1,7 @@
 """
 Import the app's exported knowledge into Supabase (`veda_knowledge`).
 
-    python -m ingest.import_corpus [path/to/veda_corpus.json]
+    python -m ingest.import_corpus [path/to/veda_corpus.json] [--prune]
 
 The JSON is produced in the APP repo by:
     flutter test tool/export_veda_corpus.dart      →  build/veda_corpus.json
@@ -55,8 +55,38 @@ def _rows(path: Path) -> list[dict]:
     return rows
 
 
+def _prune(rows: list[dict]) -> None:
+    """Remove knowledge the app no longer has, for the domains this export holds.
+
+    ⚠️ WHY (2026-09-30): the import only ever UPSERTED, so a read, card or
+    answer that left the app stayed in the pool and could still ground an
+    answer or be pointed to. With --prune, every doc of an exported domain
+    whose doc_id is not in this export is deleted, with its chunks. Scoped to
+    the export's own domains, so a trying-to-conceive export can never touch
+    pregnancy or parenting knowledge.
+    """
+    keep = {r["doc_id"] for r in rows}
+    for domain in sorted({r["domain"] for r in rows}):
+        have: list[dict] = []
+        start = 0
+        while True:
+            page = (supabase.table("veda_knowledge").select("id,doc_id")
+                    .eq("domain", domain).range(start, start + 999).execute().data)
+            have += page
+            if len(page) < 1000:
+                break
+            start += 1000
+        gone = [h for h in have if h["doc_id"] not in keep]
+        for g in gone:
+            supabase.table("veda_content_chunks").delete()                 .eq("source_table", "veda_knowledge").eq("source_id", g["id"]).execute()
+            supabase.table("veda_knowledge").delete().eq("id", g["id"]).execute()
+        print(f"  pruned {len(gone)} of {len(have)} '{domain}' docs no longer in the app")
+
+
 def main() -> None:
-    path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_JSON
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    prune = "--prune" in sys.argv
+    path = Path(args[0]) if args else DEFAULT_JSON
     if not path.exists():
         print(f"[ERROR] Not found: {path}")
         print("Run this in the APP repo first:")
@@ -74,6 +104,9 @@ def main() -> None:
             rows[start:start + batch], on_conflict="doc_id"
         ).execute()
         print(f"  upserted {min(start + batch, len(rows))}/{len(rows)}")
+
+    if prune:
+        _prune(rows)
 
     by_kind: dict[str, int] = {}
     for r in rows:

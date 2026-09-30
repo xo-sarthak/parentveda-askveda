@@ -132,6 +132,35 @@ def _try_trusted_web(question, *, user_key, channel, stage_key, stage_note,
                      sources=[r["url"] for r in results]), True
 
 
+# The corpus's name for each app stage (veda_content_chunks.domain).
+_STAGE_DOMAINS = {
+    "trying": "trying", "ttc": "trying", "trying_to_conceive": "trying",
+}
+
+
+def scope_domain(stage: str | None, domain: str | None) -> str | None:
+    """The one domain an answer is grounded in and points into.
+
+    ⚠️ THE STAGE SHE IS IN (2026-09-30, the user: "if I'm on the trying to
+    conceive side and I click Ask Veda, I can search for anything inside the
+    trying to conceive side … the range should be within the side of the app
+    that you are in"). Ask Veda is now the stage's search as well as its
+    answers, so both the retrieved chunks that ground the answer and the
+    content/videos/products it points to come from her stage's content only.
+
+    This REVERSES the Chapter 0 rule ("additive framing, never a filter; a TTC
+    user asking about labour still gets a full answer"). The cost, named: a
+    trying-to-conceive question about labour now finds no content of ours,
+    logs a gap and goes to the trusted-web fallback instead of pregnancy
+    reads. The gain: every "open in the app" pointer lands on her own side of
+    the app. An explicit `domain` from the caller still wins. Pregnancy and
+    parenting keep the old unscoped behaviour until their own pass.
+    """
+    if domain:
+        return domain
+    return _STAGE_DOMAINS.get((stage or "").lower())
+
+
 def answer(
     question: str,
     *,
@@ -174,6 +203,9 @@ def answer(
     if rf:
         usage.log_usage(channel=channel, user_key=user_key, cache_hit=False)
         return _response(rf, "red_flag")
+
+    # Her stage's content only (see scope_domain).
+    domain = scope_domain(stage, domain)
 
     # Embed ONCE — reused by the cache lookup AND retrieval.
     q_vector = embed_query(question)

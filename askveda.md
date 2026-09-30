@@ -1459,3 +1459,33 @@ Ingest **videos** (whatever host — Bunny Stream / Cloudflare Stream; the backe
 just stores each video's title + keywords + a playback URL) to switch the Videos
 sub-section from "Coming soon" to real content, and wire the video deep-link to the
 player. Then AskVeda's feed is complete on both screens.
+
+## ★ Stage scope — Ask Veda answers and points inside the stage (2026-09-30)
+
+**The user:** "if I'm on the trying to conceive side and I click the Ask Veda button … I can search for anything
+inside the trying to conceive side … the range should be within the side of the app that you are in."
+
+**What changed.** `app/answer.py` `scope_domain(stage, domain)`: a trying-to-conceive request (`stage` = trying / ttc /
+trying_to_conceive) now retrieves from `domain = 'trying'` only, so both the chunks that ground the answer and the
+content / videos / products / services it points to are trying-to-conceive items. An explicit `domain` still wins.
+Pregnancy and parenting are unscoped until their own pass.
+
+**This reverses Chapter 0's "additive framing, never a filter".** The trade-off, named: a trying-to-conceive question
+about labour now finds nothing of ours, logs a gap and goes to the trusted-web fallback, instead of being answered from
+pregnancy reads. The gain: every "open in the app" pointer lands on her own side of the app, which is what makes Ask
+Veda usable as that side's search.
+
+**No wire change.** The app already sends `stage: 'trying'`; the scope is decided here from it, so this is not a
+two-repo contract change.
+
+**Cache.** TTC keys are now `ttc:s1:…`, so no answer cached before the scope (which could point at pregnancy content)
+is served again.
+
+**Corpus refresh (same day).** `tool/export_ttc_corpus.dart` → 1,055 docs (135 reads) →
+`python -m ingest.import_corpus build/ttc_corpus.json --prune` → 16 docs that had left the app were removed with their
+chunks → TTC chunks cleared → `python -m ingest.ingest` → 2,187 trying chunks. Two fixes made on the way:
+- `import_corpus --prune`: the import only ever upserted, so removed items lingered. Prune is scoped to the export's
+  own domains.
+- `ingest.ingest` skips a table it cannot read instead of stopping: `recipes`, `reads` and `products` still lack
+  `GRANT SELECT … TO service_role` (see the earlier section), and that error used to end the run before anything was
+  embedded.
