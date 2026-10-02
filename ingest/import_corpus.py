@@ -2,6 +2,12 @@
 Import the app's exported knowledge into Supabase (`veda_knowledge`).
 
     python -m ingest.import_corpus [path/to/veda_corpus.json] [--prune]
+    python -m ingest.import_corpus build/pregnancy_corpus.json --prune-prefix pv
+
+``--prune-prefix PREFIX`` (2026-10-02) prunes ONLY docs whose doc_id starts with
+PREFIX, for the domains the file holds. It exists because pregnancy's new
+corpus lands in the SAME domain as the older offline corpus (`pregnancy`), so a
+plain ``--prune`` would delete every older doc the new file does not contain.
 
 The JSON is produced in the APP repo by:
     flutter test tool/export_veda_corpus.dart      →  build/veda_corpus.json
@@ -55,7 +61,7 @@ def _rows(path: Path) -> list[dict]:
     return rows
 
 
-def _prune(rows: list[dict]) -> None:
+def _prune(rows: list[dict], prefix: str | None = None) -> None:
     """Remove knowledge the app no longer has, for the domains this export holds.
 
     ⚠️ WHY (2026-09-30): the import only ever UPSERTED, so a read, card or
@@ -76,6 +82,9 @@ def _prune(rows: list[dict]) -> None:
             if len(page) < 1000:
                 break
             start += 1000
+        # With a prefix, only that namespace is this export's to prune.
+        if prefix:
+            have = [h for h in have if str(h["doc_id"]).startswith(prefix)]
         gone = [h for h in have if h["doc_id"] not in keep]
         for g in gone:
             supabase.table("veda_content_chunks").delete()                 .eq("source_table", "veda_knowledge").eq("source_id", g["id"]).execute()
@@ -84,8 +93,17 @@ def _prune(rows: list[dict]) -> None:
 
 
 def main() -> None:
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    prune = "--prune" in sys.argv
+    argv = sys.argv[1:]
+    prefix = None
+    if "--prune-prefix" in argv:
+        i = argv.index("--prune-prefix")
+        prefix = argv[i + 1] if i + 1 < len(argv) else None
+        if not prefix:
+            print("[ERROR] --prune-prefix needs a prefix, e.g. --prune-prefix pv")
+            return
+        del argv[i:i + 2]
+    args = [a for a in argv if not a.startswith("--")]
+    prune = "--prune" in argv or prefix is not None
     path = Path(args[0]) if args else DEFAULT_JSON
     if not path.exists():
         print(f"[ERROR] Not found: {path}")
@@ -106,7 +124,7 @@ def main() -> None:
         print(f"  upserted {min(start + batch, len(rows))}/{len(rows)}")
 
     if prune:
-        _prune(rows)
+        _prune(rows, prefix)
 
     by_kind: dict[str, int] = {}
     for r in rows:

@@ -135,6 +135,8 @@ def _try_trusted_web(question, *, user_key, channel, stage_key, stage_note,
 # The corpus's name for each app stage (veda_content_chunks.domain).
 _STAGE_DOMAINS = {
     "trying": "trying", "ttc": "trying", "trying_to_conceive": "trying",
+    # 2026-10-02: pregnancy's own pass (the user: "the way we did for TTC").
+    "pregnancy": "pregnancy",
 }
 
 
@@ -153,8 +155,17 @@ def scope_domain(stage: str | None, domain: str | None) -> str | None:
     trying-to-conceive question about labour now finds no content of ours,
     logs a gap and goes to the trusted-web fallback instead of pregnancy
     reads. The gain: every "open in the app" pointer lands on her own side of
-    the app. An explicit `domain` from the caller still wins. Pregnancy and
-    parenting keep the old unscoped behaviour until their own pass.
+    the app. An explicit `domain` from the caller still wins.
+
+    ⚠️ PREGNANCY'S PASS (2026-10-02): the same rule, for the same reason. A
+    pregnancy question is grounded in, and points to, pregnancy content only
+    (`veda_knowledge.domain = 'pregnancy'`, which holds the older offline corpus
+    and, since this pass, the app's doors, reads and tools: doc ids `pvread_`,
+    `pvfaq_`, `pvdoor_`, `pvtool_`). The cost, as for TTC: a pregnancy question
+    about newborn feeding or about conceiving now finds nothing of ours, logs a
+    gap and goes to the trusted-web fallback. The gain: every "open in the app"
+    pointer lands on her own side of the app. Parenting keeps the old unscoped
+    behaviour until its own pass.
     """
     if domain:
         return domain

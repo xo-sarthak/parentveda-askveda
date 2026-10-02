@@ -90,11 +90,19 @@ def stage_key_for(
                 f":{treatment_step or '-'}")
     if child_age_months is not None:
         return f"cm{child_age_months}"  # parenting: child age in months
+    # "s1" on a pregnancy key = scoped to the stage (2026-10-02, app/answer.py
+    # scope_domain), exactly as TTC's. Answers cached before the scope could
+    # point at another stage's content, or at none of the app's own pages; a new
+    # key means none of them is served again. Only when the app SAYS it is the
+    # pregnancy side (`stage="pregnancy"`): an older build that sends only a week
+    # keeps its old key and its old, unscoped behaviour. Kept for revert: the
+    # keys without ":s1".
+    scoped = (stage or "").lower() == "pregnancy"
     if week:
-        return f"pw{week}"              # pregnancy: by week
+        return f"pw{week}" + (":s1" if scoped else "")      # pregnancy: by week
     if trimester:
-        return f"pt{trimester}"         # pregnancy: by trimester (week unknown)
-    return ""
+        return f"pt{trimester}" + (":s1" if scoped else "")  # by trimester (week unknown)
+    return "p:s1" if scoped else ""
 
 
 # Wording changes here can flip the right answer → only reuse an EXACT repeat.
