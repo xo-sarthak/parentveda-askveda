@@ -74,9 +74,10 @@ def _is_no_answer(text: str) -> bool:
 
 
 def _cost_usd(input_tokens: int, output_tokens: int) -> float:
+    price_in, price_out = settings.active_prices_per_1m_usd
     return round(
-        input_tokens / 1_000_000 * settings.llm_price_input_per_1m_usd
-        + output_tokens / 1_000_000 * settings.llm_price_output_per_1m_usd,
+        input_tokens / 1_000_000 * price_in
+        + output_tokens / 1_000_000 * price_out,
         6,
     )
 

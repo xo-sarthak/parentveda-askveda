@@ -14,6 +14,7 @@ fastembed            # lightweight ONNX embeddings (bge-small, 384-dim) — no P
 
 # --- Phase 3: the LLM (Groq, via the OpenAI-compatible client) ---
 openai               # OpenAI-compatible client — talks to Groq via a base_url swap (or any compatible API)
+anthropic>=1.12      # Claude, when LLM_PROVIDER=anthropic (2026-10-08)
 
 # --- Phase 5: the app door (auth) ---
 pyjwt                # verify the app user's Supabase login token (JWT)

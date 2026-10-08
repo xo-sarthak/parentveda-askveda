@@ -52,6 +52,32 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = "low"
     llm_temperature: float = 0.2  # low = factual/consistent; we want grounded, not creative
 
+    # --- Which provider answers (2026-10-08) ---
+    # "groq" = the OpenAI-compatible path above (llm_* settings).
+    # "anthropic" = Claude through the official Anthropic SDK (anthropic_* below).
+    # One env line flips it (LLM_PROVIDER=anthropic), and back is the same line,
+    # so the Groq path stays whole for revert. Claude is not reached through the
+    # OpenAI shim on purpose: the shim drops Claude-only controls (effort,
+    # prompt caching) and is a compatibility layer, not the supported API.
+    llm_provider: str = "groq"
+    anthropic_api_key: str | None = None  # sk-ant-... in .env, server-side only
+    # Haiku 5.5 is the user's choice (2026-10-08): $0.10 / $0.50 per 1M tokens
+    # (prompts under 100K; ours are a few thousand), about 40x cheaper than
+    # Opus 5.5 ($4 / $20). Grounded summarising of our own content is the job,
+    # so the smaller model fits; claude-opus-5-5 is the one-line step up, and
+    # its prices must change with it.
+    # Was: anthropic_model: str = "claude-opus-5-5"
+    anthropic_model: str = "claude-haiku-5-5"
+    # low | medium | high. Grounded summarising of OUR content, not open
+    # reasoning, so low: less hidden thinking billed as output, shorter wait.
+    # (Claude 5.5 models think by default and reject `temperature`; effort is
+    # the only dial, and its default is medium, so it is set explicitly.)
+    anthropic_effort: str = "low"
+    anthropic_max_tokens: int = 16000  # a ceiling, not a target; billed per token produced
+    # Were (claude-opus-5-5): 4.00 / 20.00.
+    anthropic_price_input_per_1m_usd: float = 0.10
+    anthropic_price_output_per_1m_usd: float = 0.50
+
     # --- Retrieval (Phase 3) ---
     retrieval_top_k: int = 3  # how many nearest content chunks to feed the LLM
     min_retrieval_similarity: float = 0.30  # below this = off-topic/gap → skip the LLM
@@ -73,6 +99,21 @@ class Settings(BaseSettings):
     # Were (llama-3.1-8b-instant): 0.05 / 0.08.
     llm_price_input_per_1m_usd: float = 0.075
     llm_price_output_per_1m_usd: float = 0.30
+
+    # The model and prices of whichever provider is ACTIVE. The spend cap and
+    # the cost log read these, so flipping the provider can never leave the cap
+    # measuring Claude's spend at Groq's prices (that would let ~50x more
+    # through before the circuit breaker trips).
+    @property
+    def active_model(self) -> str:
+        return self.anthropic_model if self.llm_provider == "anthropic" else self.llm_model
+
+    @property
+    def active_prices_per_1m_usd(self) -> tuple[float, float]:
+        if self.llm_provider == "anthropic":
+            return (self.anthropic_price_input_per_1m_usd,
+                    self.anthropic_price_output_per_1m_usd)
+        return (self.llm_price_input_per_1m_usd, self.llm_price_output_per_1m_usd)
 
     # --- App door / auth (Phase 5) ---
     # In production the app sends its Supabase login token; we verify it with this

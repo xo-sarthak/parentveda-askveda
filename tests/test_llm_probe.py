@@ -6,7 +6,16 @@ would. The point is the words, because they are what an alert or a log shows.
 
 from types import SimpleNamespace
 
+import pytest
+
 from app import llm
+
+
+@pytest.fixture(autouse=True)
+def _groq_path(monkeypatch):
+    # These pin the OpenAI-compatible (Groq) path. Without this they would
+    # follow whatever LLM_PROVIDER the local .env selects (2026-10-08).
+    monkeypatch.setattr(llm.settings, "llm_provider", "groq")
 
 
 class _Raises:
