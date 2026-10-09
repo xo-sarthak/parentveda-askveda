@@ -17,7 +17,7 @@ Order — cheapest/safest first, the paid LLM call last:
 from app import cache, flywheel, gaps, guardrails, sections, usage, web_fallback
 from app.config import settings
 from app.embeddings import embed_query
-from app.llm import complete
+from app.llm import _reason, complete
 from app.prompt import (
     NO_ANSWER,
     build_full_messages,
@@ -36,6 +36,17 @@ _MSG_THROTTLED = (
 _MSG_BUSY = (
     "I'm taking a short breather to keep things running smoothly. "
     "Please try again in a little while."
+)
+# 2026-10-09: the model provider failed (no credit, outage, bad key, timeout).
+# Before, the exception became an HTTP 500, which the app reads as "no
+# internet" - a wrong message to a parent, and it hid the reads we had found.
+# Now it is a normal answer that says only what is true for HER: Veda can't
+# write one right now, here is what we have. It never names the provider or
+# billing; that detail goes to the log for us.
+_MSG_RESTING = (
+    "Ask Veda is taking a short break and can't write an answer just now. "
+    "Please try again in a little while. Anything below is from our own "
+    "library and still applies."
 )
 _MSG_LOW_CONF = (
     "I don't have solid information on that in my content yet. It's best to check "
@@ -71,6 +82,20 @@ def _is_no_answer(text: str) -> bool:
     if "content" in t and any(v in t for v in _DECLINE_VERBS):
         return True
     return any(p in t for p in _DECLINE_PHRASES)
+
+
+def _complete_or_none(messages: list[dict]) -> dict | None:
+    """complete(), but a provider failure returns None instead of raising.
+
+    The trade-off: we lose the loud 500 (and its traceback in the host's error
+    page), and gain an answer the parent can read plus the pointer sections we
+    already built for free. The loudness is kept where it belongs - one log line
+    naming the reason, the same words /health/llm reports."""
+    try:
+        return complete(messages)
+    except Exception as e:  # noqa: BLE001 - any provider failure lands calmly
+        print(f"[answer] model unavailable ({_reason(e)}): {str(e)[:200]}")
+        return None
 
 
 def _cost_usd(input_tokens: int, output_tokens: int) -> float:
@@ -111,7 +136,9 @@ def _try_trusted_web(question, *, user_key, channel, stage_key, stage_note,
     if not results:
         return None, False
 
-    out = complete(build_web_full_messages(question, results, stage_note=stage_note))
+    out = _complete_or_none(build_web_full_messages(question, results, stage_note=stage_note))
+    if out is None:
+        return _response(_MSG_RESTING, "llm_unavailable"), False
     cost = _cost_usd(out["input_tokens"], out["output_tokens"])
     usage.log_usage(channel=channel, user_key=user_key, cache_hit=False, used_web=True,
                     input_tokens=out["input_tokens"], output_tokens=out["output_tokens"],
@@ -271,8 +298,12 @@ def answer(
     sections.attach_bodies(secs["content"])  # full body so the reader shows the real article
 
     # 7) Generate sections 1–3 from the top chunks (the only step that costs money).
-    result = complete(build_full_messages(
+    result = _complete_or_none(build_full_messages(
         question, results[: settings.answer_context_k], stage_note=stage_note))
+    if result is None:
+        # The reads we found cost nothing and are still right; show them.
+        return _response(_MSG_RESTING, "llm_unavailable", secs=secs,
+                         top_similarity=top_sim)
     cost = _cost_usd(result["input_tokens"], result["output_tokens"])
     usage.log_usage(channel=channel, user_key=user_key, cache_hit=False,
                     input_tokens=result["input_tokens"],
