@@ -88,8 +88,12 @@ def stage_key_for(
         # key without ":s1".
         return (f"ttc:s1:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
                 f":{treatment_step or '-'}")
+    if (stage or "").lower() == "parenting":
+        # "s1" = scoped to the stage (2026-10-10), as TTC and pregnancy. Kept
+        # for revert: the key without ":s1".
+        return (f"cm{child_age_months}" if child_age_months is not None else "c") + ":s1"
     if child_age_months is not None:
-        return f"cm{child_age_months}"  # parenting: child age in months
+        return f"cm{child_age_months}"  # parenting: child age in months (older build)
     # "s1" on a pregnancy key = scoped to the stage (2026-10-02, app/answer.py
     # scope_domain), exactly as TTC's. Answers cached before the scope could
     # point at another stage's content, or at none of the app's own pages; a new

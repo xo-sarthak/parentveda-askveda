@@ -22,8 +22,8 @@ def test_an_explicit_domain_still_wins():
     assert scope_domain("trying", "pregnancy") == "pregnancy"
 
 
-@pytest.mark.parametrize("stage", [None, "", "parenting"])
-def test_other_stages_are_unscoped_until_their_own_pass(stage):
+@pytest.mark.parametrize("stage", [None, ""])
+def test_no_stage_stays_unscoped(stage):
     assert scope_domain(stage, None) is None
 
 
@@ -52,9 +52,8 @@ def test_an_older_build_keeps_its_old_pregnancy_key():
     assert stage_key_for() == ""
 
 
-def test_parenting_and_ttc_keys_are_untouched():
+def test_an_older_parenting_build_and_ttc_keep_their_keys():
     assert stage_key_for(child_age_months=4) == "cm4"
-    assert stage_key_for(child_age_months=4, stage="parenting") == "cm4"
     assert stage_key_for(stage="trying", chapter="waiting",
                          ttc_path="natural").startswith("ttc:s1:")
 
@@ -62,3 +61,15 @@ def test_parenting_and_ttc_keys_are_untouched():
 def test_ttc_cache_key_is_new_so_unscoped_answers_are_never_served():
     key = stage_key_for(stage="trying", chapter="waiting", ttc_path="natural")
     assert key.startswith("ttc:s1:")
+
+
+# ---- parenting's own pass (2026-10-10) ---------------------------------------
+
+@pytest.mark.parametrize("stage", ["parenting", "Parenting"])
+def test_parenting_is_scoped_to_its_own_content(stage):
+    assert scope_domain(stage, None) == "parenting"
+
+
+def test_parenting_cache_key_is_new_so_unscoped_answers_are_never_served():
+    assert stage_key_for(child_age_months=4, stage="parenting") == "cm4:s1"
+    assert stage_key_for(stage="parenting") == "c:s1"

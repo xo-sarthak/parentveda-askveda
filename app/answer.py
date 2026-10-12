@@ -165,6 +165,11 @@ _STAGE_DOMAINS = {
     "trying": "trying", "ttc": "trying", "trying_to_conceive": "trying",
     # 2026-10-02: pregnancy's own pass (the user: "the way we did for TTC").
     "pregnancy": "pregnancy",
+    # 2026-10-10: parenting's own pass. The app now exports every parenting door
+    # page, door, tool and buying guide (doc ids `ppv...`) and its parenting
+    # screen sends `stage="parenting"`, so a parenting answer points only at
+    # pages that screen can open.
+    "parenting": "parenting",
 }
 
 
@@ -192,8 +197,13 @@ def scope_domain(stage: str | None, domain: str | None) -> str | None:
     `pvfaq_`, `pvdoor_`, `pvtool_`). The cost, as for TTC: a pregnancy question
     about newborn feeding or about conceiving now finds nothing of ours, logs a
     gap and goes to the trusted-web fallback. The gain: every "open in the app"
-    pointer lands on her own side of the app. Parenting keeps the old unscoped
-    behaviour until its own pass.
+    pointer lands on her own side of the app.
+
+    ⚠️ PARENTING'S PASS (2026-10-10): the same rule again. The cost, named: a
+    parenting question about her own pregnancy-era scans finds nothing of ours
+    and goes to the trusted-web fallback. Only a build that SAYS it is the
+    parenting side is scoped; an older build that sends only a child age keeps
+    the old unscoped behaviour.
     """
     if domain:
         return domain
