@@ -101,12 +101,19 @@ def stage_key_for(
     # pregnancy side (`stage="pregnancy"`): an older build that sends only a week
     # keeps its old key and its old, unscoped behaviour. Kept for revert: the
     # keys without ":s1".
+    #
+    # ":s2" (2026-10-13): the FAQ Library joined pregnancy's knowledge and the
+    # prompt gained rule 10 (write for where she is). An answer cached before
+    # either was grounded without the FAQs and framed less for her stage; a new
+    # key means none of them is served again. The cost, named: every pregnancy
+    # question is paid for once more (the user: the AI cost is fine). Kept for
+    # revert: ":s1" in place of ":s2".
     scoped = (stage or "").lower() == "pregnancy"
     if week:
-        return f"pw{week}" + (":s1" if scoped else "")      # pregnancy: by week
+        return f"pw{week}" + (":s2" if scoped else "")      # pregnancy: by week
     if trimester:
-        return f"pt{trimester}" + (":s1" if scoped else "")  # by trimester (week unknown)
-    return "p:s1" if scoped else ""
+        return f"pt{trimester}" + (":s2" if scoped else "")  # by trimester (week unknown)
+    return "p:s2" if scoped else ""
 
 
 # Wording changes here can flip the right answer → only reuse an EXACT repeat.

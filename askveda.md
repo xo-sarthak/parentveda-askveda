@@ -1489,3 +1489,24 @@ chunks → TTC chunks cleared → `python -m ingest.ingest` → 2,187 trying chu
 - `ingest.ingest` skips a table it cannot read instead of stopping: `recipes`, `reads` and `products` still lack
   `GRANT SELECT … TO service_role` (see the earlier section), and that error used to end the run before anything was
   embedded.
+
+
+## ★ Write for where she is — the FAQ Library and rule 10 (2026-10-13)
+
+The app's FAQ Library (365 questions, Months 1–8) is imported as `veda_knowledge` documents of kind `pvask`
+(`pvask_<FAQ id>`), through the existing pregnancy export and `import_corpus --prune-prefix pv`. They are
+**knowledge**, not cached answers: the user wanted every answer personalised for the mother's point in her
+journey, not a template served to everyone.
+
+- **Rule 10, `app/prompt.py`.** Write for her week, trimester or child's age; when CONTENT says who it was
+  "Written for" and that is not her, use the facts and frame them for her stage; a different month is not a
+  reason for `NO_ANSWER`; personal never means a prediction (rules 6 and 7 hold). The ANSWER label asks for the
+  same, and `describe_stage` now names her trimester with her week.
+- **Cache `:s2`.** The pregnancy key changed so no answer from the old prompt and old knowledge is served again.
+  Cost: each pregnancy question is paid once more. Revert: `:s1`.
+- **No wire change.** The app sends the same body; the only cross-repo artefact is the corpus JSON.
+- Tests: `tests/test_personalisation.py`, and the key in `tests/test_stage_scope.py`.
+- **Model: `gpt-oss-120b` on Groq (2026-10-13).** Asked "folic acid?" at week 28, 20b refused although the FAQ's
+  facts settle it; 120b framed it for her week. Both correctly declined "brown discharge?" at week 30. Same
+  free-tier limits on this account (1,000 requests/day, 8,000 tokens/min, so about 3 answers a minute); cost
+  prices in `config.py` updated so the spend cap measures the real spend. Revert: `openai/gpt-oss-20b`.

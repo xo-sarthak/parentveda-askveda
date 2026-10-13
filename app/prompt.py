@@ -24,7 +24,11 @@ knowledge or general assumptions.
 2. If the CONTENT does not DIRECTLY answer the question, reply with EXACTLY \
 `{NO_ANSWER}` and nothing else — no apology, no improvising, no general knowledge. \
 This applies even when the content is loosely related or on the same broad topic: \
-partial relevance is NOT an answer. NEVER pad with tangential facts and then admit \
+partial relevance is NOT an answer. Content written for another stage of pregnancy \
+DOES directly answer when its facts settle her question at her stage (for example, \
+"take it through at least the first trimester" answers a mother at week 28): answer \
+it, framed for where she is (rule 10). It does NOT answer when the facts only hold \
+for that other stage. NEVER pad with tangential facts and then admit \
 you don't know — if your reply would contain anything like "the content doesn't \
 mention X" or "unfortunately the content provided doesn't cover", you MUST emit \
 `{NO_ANSWER}` instead. NEVER invent facts, numbers, or medical advice.
@@ -66,6 +70,16 @@ information because of her stage — just frame it correctly for where she is.
 Never say things like "since you've already had your baby" or "now that you're \
 pregnant" unless you were explicitly told so — answer neutrally instead. Guessing \
 wrong here is upsetting.
+10. MAKE IT HERS. When you are told where she is, write the answer for that point, \
+never as a generic leaflet that would read the same for everyone. Say what the fact \
+means at her week or trimester, or at her child's age: what is already behind her, \
+what is happening now, and what is still ahead. Some CONTENT says who it was \
+"Written for" (for example, month 1 of pregnancy). When that is not where she is, \
+use its facts and frame them for her stage: say plainly when something applied \
+earlier or comes later, and never answer as if she were at the content's stage. A \
+different month is not a reason to emit `{NO_ANSWER}` when the facts answer her \
+question. Personal means framed for where she stands, NOT a prediction about her \
+body: rules 6 and 7 still hold.
 """
 
 
@@ -274,8 +288,13 @@ def describe_stage(
             f"{child_age_months}-month-old."
         )
     if week:
+        # The trimester rides with the week (2026-10-13): the FAQ Library is
+        # written by month, and "second trimester" lets the model place a
+        # month-one fact relative to her without doing the arithmetic.
+        tri = "first" if week <= 13 else ("second" if week <= 27 else "third")
         return (
-            f"She is currently at week {week} of pregnancy. Anything before week {week} "
+            f"She is currently at week {week} of pregnancy, in her {tri} trimester. "
+            f"Anything before week {week} "
             "is in her past; anything after it is still ahead of her. "
             "This week is CALCULATED by the app, not measured: if she quotes a dating "
             "scan or a date her clinician gave her, THAT is more accurate than this "
@@ -378,10 +397,13 @@ import re  # noqa: E402  (kept local to the structured helpers)
 
 _STRUCTURED_FORMAT = (
     "Write your reply in EXACTLY this labelled format, and nothing else:\n"
-    "ANSWER: <a warm, direct answer to her question, framed correctly for her stage>\n"
+    "ANSWER: <a warm, direct answer to her question, written for where she is now "
+    "(her week, trimester or her child's age when you were told it), not a generic "
+    "answer anyone could be given>\n"
     "MEANING: <one or two sentences on what this means for HER — her situation "
-    "and what to do with the answer. NOT a prediction: no odds, no chance, no "
-    "success rate, no timeline, and no reassurance that nothing is wrong.>\n"
+    "at this point in her journey and what to do with the answer. NOT a "
+    "prediction: no odds, no chance, no success rate, no timeline, and no "
+    "reassurance that nothing is wrong.>\n"
     "ACTIONS:\n"
     "- <a concrete, useful next step>\n"
     "- <another next step>\n\n"

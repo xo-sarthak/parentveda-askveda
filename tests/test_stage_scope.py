@@ -41,9 +41,11 @@ def test_a_build_that_sends_only_a_week_stays_unscoped():
 
 
 def test_pregnancy_cache_key_is_new_so_unscoped_answers_are_never_served():
-    assert stage_key_for(week=20, stage="pregnancy") == "pw20:s1"
-    assert stage_key_for(trimester="second", stage="pregnancy") == "ptsecond:s1"
-    assert stage_key_for(stage="pregnancy") == "p:s1"
+    # ":s2" since 2026-10-13 (the FAQ Library + rule 10); ":s1" before it, and
+    # the bare key before the stage scope. Each bump strands the older answers.
+    assert stage_key_for(week=20, stage="pregnancy") == "pw20:s2"
+    assert stage_key_for(trimester="second", stage="pregnancy") == "ptsecond:s2"
+    assert stage_key_for(stage="pregnancy") == "p:s2"
 
 
 def test_an_older_build_keeps_its_old_pregnancy_key():

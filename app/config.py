@@ -45,7 +45,16 @@ class Settings(BaseSettings):
     # prompts (format kept, grounded, cites the TTC reads), fast, cheap. It
     # "thinks" before answering, so `llm_reasoning_effort` keeps that low.
     # Was: llm_model: str = "llama-3.1-8b-instant"
-    llm_model: str = "openai/gpt-oss-20b"
+    #
+    # 2026-10-13: gpt-oss-120b (the user: "switch so that Ask Veda behaves
+    # well"). Tested on the FAQ Library with rule 10: asked "folic acid?" at week
+    # 28, 20b refused although the FAQ's facts settle it ("through at least the
+    # first trimester"); 120b re-framed it for her week, and both correctly
+    # declined "brown discharge?" at week 30 (early-pregnancy facts only). Same
+    # free-tier limits on this account (1,000 requests/day, 8,000 tokens/min);
+    # on the paid tier roughly twice 20b's price per answer.
+    # Kept for revert: llm_model: str = "openai/gpt-oss-20b"
+    llm_model: str = "openai/gpt-oss-120b"
     # low | medium | high. Grounded summarising, not puzzle-solving: low keeps
     # the hidden reasoning (billed as output tokens) and the wait small. Sent
     # only to models that take it (see app/llm.py).
@@ -97,8 +106,11 @@ class Settings(BaseSettings):
     # $0 actually charged; these make cost measurable for later. With the old
     # model's prices the cap would have measured about half the real spend.
     # Were (llama-3.1-8b-instant): 0.05 / 0.08.
-    llm_price_input_per_1m_usd: float = 0.075
-    llm_price_output_per_1m_usd: float = 0.30
+    # 2026-10-13: gpt-oss-120b's list prices, so the cap keeps measuring the
+    # real spend (20b's would let about twice as much through). Confirm on the
+    # pricing page. Were (gpt-oss-20b): 0.075 / 0.30.
+    llm_price_input_per_1m_usd: float = 0.15
+    llm_price_output_per_1m_usd: float = 0.60
 
     # The model and prices of whichever provider is ACTIVE. The spend cap and
     # the cost log read these, so flipping the provider can never leave the cap

@@ -83,7 +83,8 @@ def test_the_spend_cap_prices_claude_as_claude(monkeypatch):
     # 1M in + 1M out at Haiku 5.5 = $0.10 + $0.50.
     assert answer._cost_usd(1_000_000, 1_000_000) == 0.6
     monkeypatch.setattr(llm.settings, "llm_provider", "groq")
-    assert answer._cost_usd(1_000_000, 1_000_000) == 0.375
+    # gpt-oss-120b since 2026-10-13: $0.15 + $0.60 (was 20b's 0.075 + 0.30).
+    assert answer._cost_usd(1_000_000, 1_000_000) == 0.75
 
 
 def test_an_empty_balance_is_named_as_no_credits(monkeypatch):
