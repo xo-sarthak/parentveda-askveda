@@ -10,9 +10,24 @@ Both share the same chunk→embed→upsert path. Upsert is keyed on
 source we DELETE its old chunks first, which also handles a body that shrank to
 fewer chunks, or a row that got unpublished/deleted.
 
-    python -m ingest.ingest
+The full run is INCREMENTAL (2026-10-17). Chunking is cheap and embedding is
+not (8,856 chunks took minutes at 95 °C on a laptop CPU), so every chunk
+carries a fingerprint, `content_hash`, and a run embeds only chunks that are new
+or whose fingerprint changed. It also DELETES chunks no source produces any
+more: before this, a full run only upserted, so an unpublished recipe or the
+tail of a shortened article stayed answerable for ever.
+
+    python -m ingest.ingest              # only what changed
+    python -m ingest.ingest --only recipes
+    python -m ingest.ingest --full       # re-embed everything
+
+Needs `content_hash` on veda_content_chunks: sql/veda_chunks_hash.sql.
 """
 
+import argparse
+import hashlib
+
+from app.config import settings
 from app.db import supabase
 from app.embeddings import embed_documents
 from ingest.chunker import chunk_text
@@ -214,6 +229,44 @@ def _fetch_published(table: str, columns: str) -> list[dict]:
     return rows
 
 
+def content_hash(text: str) -> str:
+    """The chunk's fingerprint: the exact embedded text AND the model name.
+
+    The model is in it because a vector is a function of both. Switch
+    `embed_model` and every fingerprint changes, so the next run re-embeds
+    everything without anyone having to remember `--full`."""
+    return hashlib.sha256(f"{settings.embed_model}\n{text}".encode("utf-8")).hexdigest()
+
+
+Key = tuple[str, str, int]  # (source_table, source_id, chunk_index)
+
+
+def plan_changes(
+    produced: dict[Key, str],
+    existing: dict[Key, "str | None"],
+    readable: set[str],
+    *,
+    full: bool = False,
+) -> tuple[list[Key], list[Key]]:
+    """Decide what a run does. Pure, so it is tested without Supabase.
+
+    produced: every chunk the sources yield now -> its hash.
+    existing: every chunk already in the index -> its stored hash (None for a
+              row written before hashes existed, which therefore re-embeds once).
+    readable: the tables actually read this run.
+
+    Returns (to_embed, stale).
+      to_embed: new keys, and keys whose hash differs (all of them when full).
+      stale:    keys in the index that no source produced, ONLY for tables read
+                this run. A table that failed to read produced nothing, and
+                treating that as "everything was removed" would wipe it from
+                Ask Veda over one permission error.
+    """
+    to_embed = [k for k, h in produced.items() if full or existing.get(k) != h]
+    stale = [k for k in existing if k not in produced and k[0] in readable]
+    return to_embed, stale
+
+
 def _chunk_rows_for(table: str, row: dict) -> list[dict]:
     """One content row → its chunk rows (each = a piece of body + shared metadata)."""
     _, base_fn, text_fn = SOURCE_SPECS[table]
@@ -228,6 +281,7 @@ def _chunk_rows_for(table: str, row: dict) -> list[dict]:
             "chunk_index": i,
             **base,
             "chunk_text": text,
+            "content_hash": content_hash(text),
         })
     return out
 
@@ -280,36 +334,89 @@ def reindex_source(table: str, source_id: str) -> dict:
     return {"ok": True, "source_id": source_id, "chunks": n}
 
 
-def ingest() -> None:
-    """Full re-embed of every published source. Idempotent."""
+def _fetch_index(tables: set[str]) -> dict:
+    """Every chunk already indexed for these tables: key -> (row id, hash). Paged."""
+    out: dict = {}
+    for table in sorted(tables):
+        page, size = 0, 1000
+        while True:
+            res = (
+                supabase.table("veda_content_chunks")
+                .select("id, source_table, source_id, chunk_index, content_hash")
+                .eq("source_table", table)
+                .range(page * size, page * size + size - 1)
+                .execute()
+            )
+            batch = res.data or []
+            for r in batch:
+                key = (r["source_table"], str(r["source_id"]), int(r["chunk_index"]))
+                out[key] = (r["id"], r.get("content_hash"))
+            if len(batch) < size:
+                break
+            page += 1
+    return out
+
+
+def ingest(only: "str | None" = None, full: bool = False) -> None:
+    """Embed what changed, remove what is gone. A re-run with no content change
+    embeds nothing and removes nothing."""
+    if only and only not in SOURCE_SPECS:
+        print(f"Unknown --only '{only}'. One of: {', '.join(SOURCE_SPECS)}")
+        return
+    tables = [only] if only else list(SOURCE_SPECS)
+
     chunk_rows: list[dict] = []
     counts: dict[str, int] = {}
-    for table, (cols, _, _tf) in SOURCE_SPECS.items():
+    readable: set[str] = set()
+    for table in tables:
+        cols = SOURCE_SPECS[table][0]
         # ⚠️ ONE UNREADABLE TABLE MUST NOT STOP THE REST (2026-09-30). The
-        # service role still lacks SELECT on recipes, reads and products (the
-        # three grants in askveda.md), and a permission error here used to end
-        # the whole run before anything was embedded, leaving whatever the
-        # caller had cleared empty. Now the table is skipped, loudly.
+        # service role once lacked SELECT on recipes, reads and products, and a
+        # permission error here used to end the whole run. Now the table is
+        # skipped, loudly, and (2026-10-17) left out of `readable`, so none of
+        # its existing chunks are treated as removed.
         try:
             rows = _fetch_published(table, cols)
         except Exception as e:  # noqa: BLE001 — any read failure skips the table
             print(f"[SKIP] {table}: {str(e)[:160]}")
             counts[table] = 0
             continue
+        readable.add(table)
         counts[table] = len(rows)
         for row in rows:
             chunk_rows.extend(_chunk_rows_for(table, row))
 
-    if not chunk_rows:
-        print("No published content found — nothing to ingest.")
-        return
-
     summary = " + ".join(f"{n} {t}" for t, n in counts.items())
     print(f"Chunked {summary} -> {len(chunk_rows)} chunks.")
-    print("Embedding (first run downloads the model, ~a minute)...")
-    n = _embed_and_upsert(chunk_rows)
-    print(f"\n[OK] Ingested {n} chunks into veda_content_chunks.")
+
+    by_key = {
+        (r["source_table"], str(r["source_id"]), r["chunk_index"]): r
+        for r in chunk_rows
+    }
+    index = _fetch_index(readable)
+    to_embed, stale = plan_changes(
+        {k: r["content_hash"] for k, r in by_key.items()},
+        {k: h for k, (_id, h) in index.items()},
+        readable,
+        full=full,
+    )
+
+    if to_embed:
+        print(f"Embedding {len(to_embed)} chunks (first run downloads the model, ~a minute)...")
+        _embed_and_upsert([by_key[k] for k in to_embed])
+    stale_ids = [index[k][0] for k in stale]
+    for start in range(0, len(stale_ids), 200):
+        supabase.table("veda_content_chunks").delete() \
+            .in_("id", stale_ids[start:start + 200]).execute()
+
+    unchanged = len(by_key) - len(to_embed)
+    print(f"\n[OK] {unchanged} unchanged · {len(to_embed)} embedded · "
+          f"{len(stale_ids)} removed (veda_content_chunks).")
 
 
 if __name__ == "__main__":
-    ingest()
+    ap = argparse.ArgumentParser(description="Fill veda_content_chunks from published content.")
+    ap.add_argument("--only", help="one source table, e.g. recipes")
+    ap.add_argument("--full", action="store_true", help="re-embed every chunk")
+    a = ap.parse_args()
+    ingest(only=a.only, full=a.full)
