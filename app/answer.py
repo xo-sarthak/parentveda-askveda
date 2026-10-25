@@ -233,6 +233,10 @@ def answer(
     months_trying: int | None = None,
     lang: str | None = None,   # 'en' | 'hi' — picks which bilingual twin is shown
     domain: str | None = None,
+    # After a loss (R3): no week is sent, and none may be spoken of.
+    pregnancy_ended: bool | None = None,
+    # Parenting side, her own stage when it is not parenting (F8).
+    family_stage: str | None = None,
 ) -> dict:
     """Answer one question end to end → the full 7-section response dict."""
     question = (question or "").strip()
@@ -262,6 +266,7 @@ def answer(
         week, trimester, child_age_months,
         stage=stage, chapter=chapter, ttc_path=ttc_path,
         timing_ownership=timing_ownership, treatment_step=treatment_step,
+        pregnancy_ended=pregnancy_ended, family_stage=family_stage,
     )
     is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
@@ -287,7 +292,9 @@ def answer(
                            timing_ownership=timing_ownership,
                            treatment_step=treatment_step)
         if is_ttc
-        else describe_stage(week, trimester, child_age_months)
+        else describe_stage(week, trimester, child_age_months,
+                            pregnancy_ended=pregnancy_ended,
+                            family_stage=family_stage)
     )
 
     # 6) Confidence floor — nothing of ours is close. Record the gap, try the web.

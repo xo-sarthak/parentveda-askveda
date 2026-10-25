@@ -1510,3 +1510,25 @@ journey, not a template served to everyone.
   facts settle it; 120b framed it for her week. Both correctly declined "brown discharge?" at week 30. Same
   free-tier limits on this account (1,000 requests/day, 8,000 tokens/min, so about 3 answers a minute); cost
   prices in `config.py` updated so the spend cap measures the real spend. Revert: `openai/gpt-oss-20b`.
+
+## ★ Where she is now: after a loss, and a parent with a second pregnancy (2026-10-25)
+
+Two `/ask` fields from the app repo (STAGE-TRANSITIONS R3 and F8 there). Both are framing and cache
+bucketing, never a filter.
+
+**`pregnancy_ended` (bool).** She has told the app of a loss; the app then sends no `week`. The note
+(`prompt._LOSS_NOTE`) tells the model not to speak of a baby growing, of weeks, a due date or the birth unless
+she asks, to be gentle, to never suggest blame, and to say when to call her doctor. Its cache bucket is `pl:s1`,
+of its own: a week's cached answer must never reach her, and hers must never reach week 14. The flag wins over a
+stray `week` from an older build.
+
+**`family_stage` ('pregnancy' | 'trying').** Sent on the parenting side when her own stage is not parenting. The
+child's age alone produced "She is NO LONGER PREGNANT", which is untrue for a mother who is pregnant again with a
+toddler. Pregnant again: the pregnancy with this child is past, but she is never told she is not pregnant, and an
+answer that would differ in a pregnancy says so. Trying again: nothing is assumed either way. Cache keys gain
+`:fp` / `:ft`, so the three parent cases never share an entry.
+
+**The general lesson.** A context note that asserts a fact ("no longer pregnant") is a claim about her, and a
+claim needs every case that can make it false. The child's age was evidence of one birth, not of no pregnancy.
+
+Tests: `tests/test_family_and_loss.py`; the wire contract lists both fields.

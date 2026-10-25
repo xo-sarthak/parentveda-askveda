@@ -39,6 +39,14 @@ class AskRequest(BaseModel):
     months_trying: int | None = None     # the strongest TTC personalisation signal
     lang: str | None = None              # 'en' | 'hi' — which bilingual twin to show
     domain: str | None = None            # optional retrieval hint, not a gate
+    # She told the app her pregnancy has ended (a loss). The app then sends no
+    # week; the answer must not speak of one (STAGE-TRANSITIONS R3, 2026-10-25).
+    pregnancy_ended: bool | None = None
+    # On the parenting side, HER OWN stage when it is not parenting: she is
+    # pregnant again ('pregnancy') or trying for another baby ('trying'). The
+    # child's age alone made the note say "she is no longer pregnant", which is
+    # untrue for her (STAGE-TRANSITIONS F8, 2026-10-25).
+    family_stage: str | None = None
 
     # KEEP unknown fields instead of discarding them, so `unknown_fields()` can
     # report them. Pydantic's default is to drop silently — which is exactly how
@@ -108,6 +116,8 @@ def ask(
         months_trying=body.months_trying,
         lang=body.lang,
         domain=body.domain,
+        pregnancy_ended=body.pregnancy_ended,
+        family_stage=body.family_stage,
     )
     return AskResponse(
         answer=result["answer"],

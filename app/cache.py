@@ -55,6 +55,8 @@ def stage_key_for(
     ttc_path: str | None = None,
     timing_ownership: str | None = None,
     treatment_step: str | None = None,
+    pregnancy_ended: bool | None = None,
+    family_stage: str | None = None,
 ) -> str:
     """Bucket the asker by LIFE STAGE so cached answers never cross stages.
 
@@ -91,7 +93,21 @@ def stage_key_for(
     if (stage or "").lower() == "parenting":
         # "s1" = scoped to the stage (2026-10-10), as TTC and pregnancy. Kept
         # for revert: the key without ":s1".
-        return (f"cm{child_age_months}" if child_age_months is not None else "c") + ":s1"
+        base = (f"cm{child_age_months}" if child_age_months is not None else "c") + ":s1"
+        # F8 (2026-10-25): a mother pregnant again, or trying again, is told
+        # something different from one who is neither ("no longer pregnant"
+        # would be untrue for her), so her answers never share an entry.
+        fam = (family_stage or "").lower()
+        if fam == "pregnancy":
+            return base + ":fp"
+        if fam in ("trying", "ttc", "trying_to_conceive"):
+            return base + ":ft"
+        return base
+    # After a loss (R3, 2026-10-25): one bucket of its own, never a week's. An
+    # answer cached for week 14 speaks of a baby growing; it must not be served
+    # to a mother whose pregnancy has ended, and hers must not reach week 14.
+    if pregnancy_ended and child_age_months is None:
+        return "pl:s1"
     if child_age_months is not None:
         return f"cm{child_age_months}"  # parenting: child age in months (older build)
     # "s1" on a pregnancy key = scoped to the stage (2026-10-02, app/answer.py

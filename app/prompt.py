@@ -264,16 +264,54 @@ def describe_ttc_stage(
     return " ".join(bits)
 
 
+# After a loss (STAGE-TRANSITIONS R3, 2026-10-25). The app sends no week then,
+# and the note must make sure the model does not reach for one either.
+_LOSS_NOTE = (
+    "Her pregnancy has ended: she has told the app of a pregnancy loss. Do NOT "
+    "speak of a baby growing, of pregnancy weeks, a due date, the birth or "
+    "getting ready for it, unless her question is about them. Be gentle and "
+    "plain. Mention the loss only if her question is about it, and never suggest "
+    "it was anyone's fault. For her body after a loss, say what is usual and "
+    "when to call her doctor or go to hospital. If she asks about trying again, "
+    "answer from the content and say her own doctor can advise on timing."
+)
+
+
 def describe_stage(
     week: int | None = None,
     trimester: str | None = None,
     child_age_months: int | None = None,
+    *,
+    pregnancy_ended: bool | None = None,
+    family_stage: str | None = None,
 ) -> str | None:
     """A plain-English note telling the model where she is — so it gets tense right.
 
     This is CONTEXT, never a gate: she can ask about any stage of the journey, and
     the model answers fully — just phrased correctly for where she stands today.
     """
+    if pregnancy_ended and child_age_months is None:
+        return _LOSS_NOTE
+    fam = (family_stage or "").lower()
+    if child_age_months is not None and fam == "pregnancy":
+        # F8: a child's question from a mother who is pregnant again. The
+        # pregnancy with THIS child is past; she is not "no longer pregnant".
+        return (
+            f"She is asking about her child, who is {child_age_months} month(s) old. "
+            "She is also pregnant again now. Anything about the pregnancy with this "
+            "child is in the past tense, but never say or imply that she is not "
+            "pregnant. Answer as for a parent of a "
+            f"{child_age_months}-month-old, and if something in the answer would be "
+            "different during a pregnancy (a medicine, lifting, a vaccine for her), "
+            "say so and that her doctor can advise."
+        )
+    if child_age_months is not None and fam in ("trying", "ttc", "trying_to_conceive"):
+        return (
+            f"She is asking about her child, who is {child_age_months} month(s) old. "
+            "She is also trying for another baby. Anything about the pregnancy with "
+            "this child is in the past tense. Answer as for a parent of a "
+            f"{child_age_months}-month-old; do not assume she is or is not pregnant now."
+        )
     if child_age_months is not None:
         return (
             f"She is NO LONGER PREGNANT — she has given birth and her baby is now "

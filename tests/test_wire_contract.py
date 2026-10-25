@@ -45,6 +45,8 @@ def test_every_field_the_app_sends_is_understood_here():
         "question", "week", "trimester", "child_age_months",
         "stage", "chapter", "cycle_day", "ttc_path", "timing_ownership",
         "treatment_step", "months_trying", "lang", "domain",
+        # 2026-10-25: R3 and F8 in the app repo.
+        "pregnancy_ended", "family_stage",
     }
     known = set(AskRequest.model_fields)
     missing = sent_by_app - known
@@ -56,7 +58,8 @@ def test_context_fields_reach_the_brain():
     would be just as silent. Check answer() actually takes each one."""
     params = set(inspect.signature(answer).parameters)
     for field in ("stage", "chapter", "cycle_day", "ttc_path",
-                  "timing_ownership", "treatment_step", "months_trying", "lang"):
+                  "timing_ownership", "treatment_step", "months_trying", "lang",
+                  "pregnancy_ended", "family_stage"):
         assert field in params, f"answer() cannot receive {field!r}"
 
 
