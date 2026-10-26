@@ -47,6 +47,11 @@ class AskRequest(BaseModel):
     # child's age alone made the note say "she is no longer pregnant", which is
     # untrue for her (STAGE-TRANSITIONS F8, 2026-10-25).
     family_stage: str | None = None
+    # She is pregnant again, or trying again, after a pregnancy loss she
+    # recorded in the app (2026-10-26, STILL-OPEN §61.1 in the app repo).
+    # Only from the recorded loss: her onboarding "gentle" answer stays in the
+    # app (the user, 2026-10-17). Framing and cache, never a filter.
+    previous_loss: bool | None = None
 
     # KEEP unknown fields instead of discarding them, so `unknown_fields()` can
     # report them. Pydantic's default is to drop silently — which is exactly how
@@ -118,6 +123,7 @@ def ask(
         domain=body.domain,
         pregnancy_ended=body.pregnancy_ended,
         family_stage=body.family_stage,
+        previous_loss=body.previous_loss,
     )
     return AskResponse(
         answer=result["answer"],

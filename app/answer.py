@@ -25,6 +25,7 @@ from app.prompt import (
     describe_stage,
     describe_ttc_stage,
     parse_structured,
+    with_previous_loss,
 )
 from app.retriever import retrieve
 
@@ -237,6 +238,9 @@ def answer(
     pregnancy_ended: bool | None = None,
     # Parenting side, her own stage when it is not parenting (F8).
     family_stage: str | None = None,
+    # Pregnant again or trying again after a loss she told the app about
+    # (2026-10-26): gentler framing on top of her stage, its own cache entries.
+    previous_loss: bool | None = None,
 ) -> dict:
     """Answer one question end to end → the full 7-section response dict."""
     question = (question or "").strip()
@@ -267,6 +271,7 @@ def answer(
         stage=stage, chapter=chapter, ttc_path=ttc_path,
         timing_ownership=timing_ownership, treatment_step=treatment_step,
         pregnancy_ended=pregnancy_ended, family_stage=family_stage,
+        previous_loss=previous_loss,
     )
     is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
@@ -296,6 +301,9 @@ def answer(
                             pregnancy_ended=pregnancy_ended,
                             family_stage=family_stage)
     )
+    stage_note = with_previous_loss(
+        stage_note, previous_loss=previous_loss, is_ttc=is_ttc,
+        pregnancy_ended=pregnancy_ended, child_age_months=child_age_months)
 
     # 6) Confidence floor — nothing of ours is close. Record the gap, try the web.
     if top_sim < settings.min_retrieval_similarity:

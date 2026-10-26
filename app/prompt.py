@@ -277,6 +277,50 @@ _LOSS_NOTE = (
 )
 
 
+# After a loss she told the app about, and a NEW chapter since (2026-10-26,
+# STILL-OPEN §61.1 in the app repo): she is pregnant again, or trying again.
+# Framing only, never a filter. It rides ON TOP of her stage note, which still
+# gives her week or her cycle; it never replaces it (that is _LOSS_NOTE, for
+# the pregnancy that ended).
+_PREGNANT_AFTER_LOSS_NOTE = (
+    "Her last pregnancy ended in a loss, which she told the app about. This "
+    "pregnancy may bring worry alongside hope. Do not open with congratulations "
+    "or excitement; be warm and steady. Mention the loss only if her question is "
+    "about it or about worry. Never give a chance or a probability of another "
+    "loss, and never suggest the loss was anyone's fault. If she is anxious, say "
+    "that this is common after a loss, and, where the content covers it, that "
+    "she can ask her doctor about earlier or extra checks."
+)
+
+_TRYING_AFTER_LOSS_NOTE = (
+    "She is trying again after a pregnancy loss that she told the app about. Be "
+    "gentle. Mention the loss only if her question is about it. Never give a "
+    "chance of conceiving or of another loss, and never suggest the loss was "
+    "anyone's fault. On when to try again, answer from the content and say her "
+    "own doctor can advise on timing."
+)
+
+
+def with_previous_loss(
+    note: str | None,
+    *,
+    previous_loss: bool | None,
+    is_ttc: bool,
+    pregnancy_ended: bool | None = None,
+    child_age_months: int | None = None,
+) -> str | None:
+    """[note] with the after-a-loss line added, when it applies.
+
+    Not on the parenting side (a child's question is about the child), and not
+    while the pregnancy that ended is the one on screen (`pregnancy_ended`
+    already frames that, more strongly).
+    """
+    if not previous_loss or pregnancy_ended or child_age_months is not None:
+        return note
+    extra = _TRYING_AFTER_LOSS_NOTE if is_ttc else _PREGNANT_AFTER_LOSS_NOTE
+    return f"{note} {extra}" if note else extra
+
+
 def describe_stage(
     week: int | None = None,
     trimester: str | None = None,

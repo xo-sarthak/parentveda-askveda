@@ -1532,3 +1532,22 @@ answer that would differ in a pregnancy says so. Trying again: nothing is assume
 claim needs every case that can make it false. The child's age was evidence of one birth, not of no pregnancy.
 
 Tests: `tests/test_family_and_loss.py`; the wire contract lists both fields.
+
+## ★ A new chapter after a loss: `previous_loss` (2026-10-26)
+
+One more `/ask` field from the app repo (STILL-OPEN §61.1 there). **`previous_loss` (bool)** is sent when she is
+pregnant again, or trying again, after a pregnancy loss she RECORDED in the app (`PregnancyRecords`). It is never
+sent from her onboarding "anything we should be gentle about?" answer: that stays in the app (the user,
+2026-10-17).
+
+Framing on top of her stage, never instead of it: `prompt.with_previous_loss` keeps her week or her cycle note and
+adds one line. Pregnant again: no congratulations or excitement, room for worry, the loss mentioned only if she
+asks about it or about worry, never a probability of another loss, never blame, and earlier or extra checks only
+where the content covers them. Trying again: gentle, no chance of conceiving or of another loss, her own doctor on
+timing. Not on the parenting side, and not while `pregnancy_ended` is set (that note is stronger). Cache keys gain
+`:al`, so her answers never share an entry with the same week's or chapter's ordinary ones.
+
+**The general lesson.** A field that adds framing should compose with the stage note, not replace it: replacing
+it would lose her week, which is the fact most of her questions turn on.
+
+Tests: `tests/test_previous_loss.py`; the wire contract lists the field.

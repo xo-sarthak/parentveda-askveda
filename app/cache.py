@@ -57,6 +57,7 @@ def stage_key_for(
     treatment_step: str | None = None,
     pregnancy_ended: bool | None = None,
     family_stage: str | None = None,
+    previous_loss: bool | None = None,
 ) -> str:
     """Bucket the asker by LIFE STAGE so cached answers never cross stages.
 
@@ -83,13 +84,18 @@ def stage_key_for(
     so the split is small. The day count inside a step is NOT sent, like the
     cycle day and for the same reason.
     """
+    # After a loss, a new chapter (2026-10-26): her answers are framed with no
+    # congratulations and room for worry, so they never share an entry with
+    # the same stage's ordinary answers. ":al" = after a loss.
+    al = (":al" if previous_loss and not pregnancy_ended
+          and child_age_months is None else "")
     if (stage or "").lower() in ("trying", "ttc", "trying_to_conceive"):
         # "s1" = scoped to the stage (2026-09-30, app/answer.py scope_domain).
         # Answers cached before the scope pointed at pregnancy content too; a
         # new key means none of them is served again. Kept for revert: the
         # key without ":s1".
         return (f"ttc:s1:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
-                f":{treatment_step or '-'}")
+                f":{treatment_step or '-'}{al}")
     if (stage or "").lower() == "parenting":
         # "s1" = scoped to the stage (2026-10-10), as TTC and pregnancy. Kept
         # for revert: the key without ":s1".
@@ -126,10 +132,10 @@ def stage_key_for(
     # revert: ":s1" in place of ":s2".
     scoped = (stage or "").lower() == "pregnancy"
     if week:
-        return f"pw{week}" + (":s2" if scoped else "")      # pregnancy: by week
+        return f"pw{week}" + (":s2" if scoped else "") + al      # pregnancy: by week
     if trimester:
-        return f"pt{trimester}" + (":s2" if scoped else "")  # by trimester (week unknown)
-    return "p:s2" if scoped else ""
+        return f"pt{trimester}" + (":s2" if scoped else "") + al  # by trimester (week unknown)
+    return ("p:s2" if scoped else "") + al
 
 
 # Wording changes here can flip the right answer → only reuse an EXACT repeat.
