@@ -21,10 +21,15 @@ from app.llm import _reason, complete
 from app.prompt import (
     NO_ANSWER,
     build_full_messages,
+    CHILD_CONDITIONS,
+    FAMILY_SIGNALS,
     build_web_full_messages,
+    clean_corrected_age,
+    clean_ids,
     describe_stage,
     describe_ttc_stage,
     parse_structured,
+    with_child_context,
     with_previous_loss,
 )
 from app.retriever import retrieve
@@ -241,6 +246,12 @@ def answer(
     # Pregnant again or trying again after a loss she told the app about
     # (2026-10-26): gentler framing on top of her stage, its own cache entries.
     previous_loss: bool | None = None,
+    # The child's context, parenting side (2026-10-29, app PP 6): the age by
+    # the due date for a baby born early, and closed lists of ids. Framing and
+    # cache, never a filter. Cleaned below; nothing else reaches the prompt.
+    child_age_corrected_months: int | None = None,
+    family_signals: list[str] | None = None,
+    child_conditions: list[str] | None = None,
 ) -> dict:
     """Answer one question end to end → the full 7-section response dict."""
     question = (question or "").strip()
@@ -264,6 +275,10 @@ def answer(
     # Her stage's content only (see scope_domain).
     domain = scope_domain(stage, domain)
 
+    corrected = clean_corrected_age(child_age_corrected_months, child_age_months)
+    signals = clean_ids(family_signals, FAMILY_SIGNALS) if child_age_months is not None else []
+    conditions = clean_ids(child_conditions, CHILD_CONDITIONS) if child_age_months is not None else []
+
     # Embed ONCE — reused by the cache lookup AND retrieval.
     q_vector = embed_query(question)
     stage_key = cache.stage_key_for(
@@ -272,6 +287,7 @@ def answer(
         timing_ownership=timing_ownership, treatment_step=treatment_step,
         pregnancy_ended=pregnancy_ended, family_stage=family_stage,
         previous_loss=previous_loss,
+        corrected_months=corrected, signals=signals, conditions=conditions,
     )
     is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
@@ -304,6 +320,10 @@ def answer(
     stage_note = with_previous_loss(
         stage_note, previous_loss=previous_loss, is_ttc=is_ttc,
         pregnancy_ended=pregnancy_ended, child_age_months=child_age_months)
+    if not is_ttc:
+        stage_note = with_child_context(
+            stage_note, child_age_months=child_age_months,
+            corrected_months=corrected, signals=signals, conditions=conditions)
 
     # 6) Confidence floor — nothing of ours is close. Record the gap, try the web.
     if top_sim < settings.min_retrieval_similarity:

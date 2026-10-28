@@ -387,6 +387,106 @@ def describe_stage(
     return None
 
 
+# ---- the child's context, parenting side (2026-10-29, app PP 6) --------------
+#
+# IDS, NEVER PROSE. The app sends a fixed vocabulary, and only ids on these
+# lists reach the prompt or the cache key. Two reasons, both general:
+#   1. The cache is SHARED. Free text (a child's name, her own words) would
+#      either split the cache per family, or leak one family's details into
+#      another's cached answer. A small closed set can be part of the key.
+#   2. Anything that reaches a prompt from a client is untrusted. A closed
+#      list means a client cannot put instructions into the model's context.
+# An unknown id is dropped (and logged by the route), never passed through.
+
+FAMILY_SIGNALS: dict[str, str] = {
+    "born_early": "The baby was born early.",
+    "c_section": "She had a caesarean birth and is in her first three months of recovery.",
+    "formula": "The baby has some formula.",
+    "breastfeeding": "The baby has breast milk (at the breast or expressed).",
+    "twins": "She is caring for twins (or more).",
+    "after_treatment": "This baby came after fertility treatment.",
+    "two_at_home": "There is an older child at home too.",
+    "after_loss": (
+        "She had a pregnancy loss before this baby, which she recorded in the app. "
+        "Mention it only if her question is about it."
+    ),
+}
+
+CHILD_CONDITIONS: dict[str, str] = {
+    "eczema": "eczema",
+    "cmpa": "cow's milk protein allergy",
+    "foodAllergy": "a food allergy",
+    "reflux": "reflux",
+    "colic": "colic",
+    "tongueTie": "tongue-tie",
+    "asthma": "asthma",
+    "lowBirthWeight": "low birth weight",
+    "devDelay": "a developmental delay",
+    "hearing": "a hearing need",
+    "vision": "a vision need",
+}
+
+
+def clean_ids(ids: list[str] | None, allowed: dict[str, str]) -> list[str]:
+    """Known ids only, each once, sorted: one family's set always gives one key."""
+    return sorted({i for i in (ids or []) if i in allowed})
+
+
+def clean_corrected_age(
+    corrected_months: int | None, child_age_months: int | None
+) -> int | None:
+    """The corrected age, only where it means something: a parenting question,
+    younger than the birthday age, and under 24 months (when correction stops)."""
+    if corrected_months is None or child_age_months is None:
+        return None
+    if corrected_months < 0 or corrected_months >= child_age_months or child_age_months >= 24:
+        return None
+    return corrected_months
+
+
+def with_child_context(
+    note: str | None,
+    *,
+    child_age_months: int | None,
+    corrected_months: int | None = None,
+    signals: list[str] | None = None,
+    conditions: list[str] | None = None,
+) -> str | None:
+    """[note] with the child's corrected age and family context added.
+
+    Parenting only. Expects ids already cleaned (`clean_ids`,
+    `clean_corrected_age`). FRAMING, never a filter: she gets the answer to
+    what she asked, shaped by what the family has told the app.
+    """
+    if child_age_months is None:
+        return note
+    lines: list[str] = []
+    if corrected_months is not None:
+        lines.append(
+            f"The baby was born early: {child_age_months} month(s) old by birthday, "
+            f"{corrected_months} month(s) by CORRECTED age. For development, "
+            "milestones, play, sleep and feeding stages, answer for the corrected "
+            f"age ({corrected_months} months). For vaccines and growth charts, the "
+            "birthday age applies. If the difference matters to the answer, say "
+            "which age you mean."
+        )
+    sig = [FAMILY_SIGNALS[s] for s in (signals or []) if s in FAMILY_SIGNALS]
+    cond = [CHILD_CONDITIONS[c] for c in (conditions or []) if c in CHILD_CONDITIONS]
+    if sig or cond:
+        told = " ".join(sig)
+        if cond:
+            told += (" " if told else "") + f"The family has noted: {', '.join(cond)}."
+        lines.append(
+            "What the family has told the app: " + told + " Use this only where it "
+            "changes the answer to her question; do not list it back to her. Never "
+            "diagnose, and for a noted condition defer to the child's own doctor."
+        )
+    if not lines:
+        return note
+    extra = " ".join(lines)
+    return f"{note} {extra}" if note else extra
+
+
 def _format_chunk(index: int, chunk: dict) -> str:
     """Render one retrieved chunk as a labelled block the LLM can cite from."""
     header_bits = [f"[{index}] {chunk.get('title') or 'Untitled'}"]

@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict
 
 from app.answer import answer
 from app.auth import resolve_user_key
+from app.prompt import CHILD_CONDITIONS, FAMILY_SIGNALS, clean_corrected_age, clean_ids
 
 router = APIRouter()
 
@@ -52,6 +53,15 @@ class AskRequest(BaseModel):
     # Only from the recorded loss: her onboarding "gentle" answer stays in the
     # app (the user, 2026-10-17). Framing and cache, never a filter.
     previous_loss: bool | None = None
+    # The child's context, parenting side (2026-10-29, app PP 6). The age by
+    # the due date for a baby born early (sent only under 24 months), next to
+    # the birthday age above. Then CLOSED lists of ids (app/prompt.py
+    # FAMILY_SIGNALS, CHILD_CONDITIONS): never a name, never her words. The
+    # app sends conditions only while one child is saved, because they are
+    # stored per family, not per child.
+    child_age_corrected_months: int | None = None
+    family_signals: list[str] | None = None
+    child_conditions: list[str] | None = None
 
     # KEEP unknown fields instead of discarding them, so `unknown_fields()` can
     # report them. Pydantic's default is to drop silently — which is exactly how
@@ -91,6 +101,11 @@ class AskResponse(BaseModel):
     # meta
     source: str
     cache_hit: bool
+    # Which of the child's context this answer was written with (2026-10-29,
+    # app PP 6): 'corrected_age' and the cleaned ids. The app shows "Answered
+    # with what you told us" from THIS, not from what it sent, so a service
+    # that ignored a field never makes the app claim it was used.
+    used_context: list[str] = []
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -105,6 +120,12 @@ def ask(
     if unknown:
         print(f"[/ask] app sent field(s) this service ignores: {unknown} "
               f"— add them to AskRequest + answer() or they do nothing.")
+    dropped = sorted(
+        set(body.family_signals or []) - set(FAMILY_SIGNALS)
+        | set(body.child_conditions or []) - set(CHILD_CONDITIONS))
+    if dropped:
+        print(f"[/ask] app sent context id(s) this service does not know: {dropped} "
+              f"— add them to app/prompt.py or they do nothing.")
     result = answer(
         body.question,
         user_key=user_key,
@@ -124,6 +145,9 @@ def ask(
         pregnancy_ended=body.pregnancy_ended,
         family_stage=body.family_stage,
         previous_loss=body.previous_loss,
+        child_age_corrected_months=body.child_age_corrected_months,
+        family_signals=body.family_signals,
+        child_conditions=body.child_conditions,
     )
     return AskResponse(
         answer=result["answer"],
@@ -135,4 +159,19 @@ def ask(
         services=result.get("services", []),
         source=result["source"],
         cache_hit=result["cache_hit"],
+        used_context=used_child_context(body, result["source"]),
     )
+
+
+def used_child_context(body: AskRequest, source: str) -> list[str]:
+    """The child's context the answer was written with. Empty when no answer
+    was written for her (red flag, low confidence, a limit), or not parenting."""
+    written = source in ("llm", "web") or source.startswith("cache")
+    if not written or body.child_age_months is None:
+        return []
+    used: list[str] = []
+    if clean_corrected_age(body.child_age_corrected_months, body.child_age_months) is not None:
+        used.append("corrected_age")
+    used += clean_ids(body.family_signals, FAMILY_SIGNALS)
+    used += clean_ids(body.child_conditions, CHILD_CONDITIONS)
+    return used

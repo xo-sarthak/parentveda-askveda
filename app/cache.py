@@ -58,6 +58,9 @@ def stage_key_for(
     pregnancy_ended: bool | None = None,
     family_stage: str | None = None,
     previous_loss: bool | None = None,
+    corrected_months: int | None = None,
+    signals: list[str] | None = None,
+    conditions: list[str] | None = None,
 ) -> str:
     """Bucket the asker by LIFE STAGE so cached answers never cross stages.
 
@@ -105,9 +108,22 @@ def stage_key_for(
         # would be untrue for her), so her answers never share an entry.
         fam = (family_stage or "").lower()
         if fam == "pregnancy":
-            return base + ":fp"
-        if fam in ("trying", "ttc", "trying_to_conceive"):
-            return base + ":ft"
+            base += ":fp"
+        elif fam in ("trying", "ttc", "trying_to_conceive"):
+            base += ":ft"
+        # The child's context (2026-10-29, app PP 6): every fact that changes
+        # the answer is in the key, or a formula baby's answer is served to a
+        # breastfed one. The ids arrive cleaned (prompt.clean_ids: a closed,
+        # sorted list), so the split is bounded. The cost is hit rate, paid
+        # only by families who told us something; a family who told us nothing
+        # keeps the old key and its cached answers. Kept for revert: the
+        # early returns above with no suffix below.
+        if corrected_months is not None:
+            base += f":cc{corrected_months}"
+        if signals:
+            base += ":g=" + "+".join(signals)
+        if conditions:
+            base += ":k=" + "+".join(conditions)
         return base
     # After a loss (R3, 2026-10-25): one bucket of its own, never a week's. An
     # answer cached for week 14 speaks of a baby growing; it must not be served
