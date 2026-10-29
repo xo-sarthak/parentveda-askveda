@@ -213,6 +213,41 @@ _CLOSERS = {
 }
 
 
+# WHAT PLACED HER FERTILE DAYS THIS CYCLE (2026-10-29, app T2). The app's
+# window follows a body signal over the calendar: a positive LH test means
+# ovulation about a day later, a sustained temperature rise means it has
+# already happened. Without this the model only had her cycle day and would
+# recount the window from an average she has already overruled. A CLOSED set:
+# anything else is dropped (and logged by the route). Absent means her period
+# dates, the ordinary case, which needs no sentence.
+WINDOW_SOURCES: dict[str, str] = {
+    "lh": (
+        "This cycle she logged a positive ovulation (LH) test, so her fertile "
+        "days follow that test, not a calendar estimate: ovulation usually comes "
+        "a day or so after the surge, and the day of the positive and the next "
+        "are the best two days. Do NOT recount her window from her cycle length."
+    ),
+    "temperature": (
+        "This cycle she logged a sustained rise in her basal temperature, which "
+        "suggests ovulation has already happened; her fertile days follow that "
+        "reading, not a calendar estimate. Do NOT recount her window from her "
+        "cycle length, and do not suggest timing sex by this cycle's window."
+    ),
+}
+
+
+def clean_window_source(value: str | None,
+                        timing_ownership: str | None = None) -> str | None:
+    """The window source if it is one we know AND her body sets the timing.
+    On a fully medicated cycle her signals are noise (see _TIMING_OWNERSHIP)."""
+    v = (value or "").lower()
+    if v not in WINDOW_SOURCES:
+        return None
+    if (timing_ownership or "").lower() == "clinic_controlled":
+        return None
+    return v
+
+
 def describe_ttc_stage(
     chapter: str | None = None,
     ttc_path: str | None = None,
@@ -220,6 +255,7 @@ def describe_ttc_stage(
     cycle_day: int | None = None,
     timing_ownership: str | None = None,
     treatment_step: str | None = None,
+    window_source: str | None = None,
 ) -> str:
     """Framing note for someone TRYING TO CONCEIVE.
 
@@ -249,6 +285,11 @@ def describe_ttc_stage(
     # A cycle day is only meaningful when her own body is setting the timing.
     if cycle_day and (timing_ownership or "").lower() != "clinic_controlled":
         bits.append(f"She is on day {cycle_day} of her cycle.")
+    # What placed her fertile days (2026-10-29). Cleaned again here, so a
+    # caller that skipped the route cannot slip one past a medicated cycle.
+    src = clean_window_source(window_source, timing_ownership)
+    if src:
+        bits.append(WINDOW_SOURCES[src])
     if months_trying is not None:
         if months_trying >= 12:
             bits.append(

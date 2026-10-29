@@ -28,6 +28,7 @@ from app.prompt import (
     clean_ids,
     describe_stage,
     describe_ttc_stage,
+    clean_window_source,
     parse_structured,
     with_child_context,
     with_previous_loss,
@@ -252,6 +253,10 @@ def answer(
     child_age_corrected_months: int | None = None,
     family_signals: list[str] | None = None,
     child_conditions: list[str] | None = None,
+    # What placed her fertile days this cycle (2026-10-29, app T2): 'lh' or
+    # 'temperature', absent for her period dates. Framing and cache, cleaned
+    # below against the ownership.
+    window_source: str | None = None,
 ) -> dict:
     """Answer one question end to end → the full 7-section response dict."""
     question = (question or "").strip()
@@ -281,6 +286,9 @@ def answer(
 
     # Embed ONCE — reused by the cache lookup AND retrieval.
     q_vector = embed_query(question)
+    window = (clean_window_source(window_source, timing_ownership)
+              if (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
+              else None)
     stage_key = cache.stage_key_for(
         week, trimester, child_age_months,
         stage=stage, chapter=chapter, ttc_path=ttc_path,
@@ -288,6 +296,7 @@ def answer(
         pregnancy_ended=pregnancy_ended, family_stage=family_stage,
         previous_loss=previous_loss,
         corrected_months=corrected, signals=signals, conditions=conditions,
+        window_source=window,
     )
     is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
@@ -311,7 +320,8 @@ def answer(
     stage_note = (
         describe_ttc_stage(chapter, ttc_path, months_trying, cycle_day,
                            timing_ownership=timing_ownership,
-                           treatment_step=treatment_step)
+                           treatment_step=treatment_step,
+                           window_source=window)
         if is_ttc
         else describe_stage(week, trimester, child_age_months,
                             pregnancy_ended=pregnancy_ended,

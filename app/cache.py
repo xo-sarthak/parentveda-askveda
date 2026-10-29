@@ -61,6 +61,7 @@ def stage_key_for(
     corrected_months: int | None = None,
     signals: list[str] | None = None,
     conditions: list[str] | None = None,
+    window_source: str | None = None,
 ) -> str:
     """Bucket the asker by LIFE STAGE so cached answers never cross stages.
 
@@ -97,8 +98,15 @@ def stage_key_for(
         # Answers cached before the scope pointed at pregnancy content too; a
         # new key means none of them is served again. Kept for revert: the
         # key without ":s1".
+        # WINDOW SOURCE (2026-10-29, app T2): "your days follow your positive
+        # test" must never be served to someone with no test. Two values, sent
+        # only when a signal was logged, and appended only then, so everyone
+        # else keeps the old key and its cached answers. It arrives cleaned
+        # (prompt.clean_window_source). Kept for revert: the return without
+        # the suffix.
+        ws = f":w{window_source}" if window_source else ""
         return (f"ttc:s1:{chapter or '-'}:{ttc_path or '-'}:{timing_ownership or '-'}"
-                f":{treatment_step or '-'}{al}")
+                f":{treatment_step or '-'}{al}{ws}")
     if (stage or "").lower() == "parenting":
         # "s1" = scoped to the stage (2026-10-10), as TTC and pregnancy. Kept
         # for revert: the key without ":s1".

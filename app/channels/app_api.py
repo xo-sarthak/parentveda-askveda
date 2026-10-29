@@ -13,7 +13,8 @@ from pydantic import BaseModel, ConfigDict
 
 from app.answer import answer
 from app.auth import resolve_user_key
-from app.prompt import CHILD_CONDITIONS, FAMILY_SIGNALS, clean_corrected_age, clean_ids
+from app.prompt import (CHILD_CONDITIONS, FAMILY_SIGNALS, WINDOW_SOURCES,
+                        clean_corrected_age, clean_ids)
 
 router = APIRouter()
 
@@ -62,6 +63,11 @@ class AskRequest(BaseModel):
     child_age_corrected_months: int | None = None
     family_signals: list[str] | None = None
     child_conditions: list[str] | None = None
+    # What placed her fertile days this cycle (2026-10-29, app T2): 'lh' (a
+    # positive ovulation test) or 'temperature' (a sustained rise). Absent =
+    # her period dates. A closed id (app/prompt.py WINDOW_SOURCES). NEVER sent
+    # from the partner's app, like cycle_day; dropped on a medicated cycle.
+    window_source: str | None = None
 
     # KEEP unknown fields instead of discarding them, so `unknown_fields()` can
     # report them. Pydantic's default is to drop silently — which is exactly how
@@ -123,6 +129,8 @@ def ask(
     dropped = sorted(
         set(body.family_signals or []) - set(FAMILY_SIGNALS)
         | set(body.child_conditions or []) - set(CHILD_CONDITIONS))
+    if body.window_source and body.window_source.lower() not in WINDOW_SOURCES:
+        dropped = sorted(set(dropped) | {f"window_source={body.window_source}"})
     if dropped:
         print(f"[/ask] app sent context id(s) this service does not know: {dropped} "
               f"— add them to app/prompt.py or they do nothing.")
@@ -148,6 +156,7 @@ def ask(
         child_age_corrected_months=body.child_age_corrected_months,
         family_signals=body.family_signals,
         child_conditions=body.child_conditions,
+        window_source=body.window_source,
     )
     return AskResponse(
         answer=result["answer"],
