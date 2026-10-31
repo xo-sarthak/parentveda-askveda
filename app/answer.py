@@ -35,6 +35,10 @@ from app.prompt import (
 )
 from app.retriever import retrieve
 
+import logging
+
+log = logging.getLogger(__name__)
+
 # Canned, friendly responses for the non-answer paths.
 _MSG_EMPTY = "Please type a question and I'll do my best to help."
 _MSG_THROTTLED = (
@@ -217,6 +221,33 @@ def scope_domain(stage: str | None, domain: str | None) -> str | None:
     return _STAGE_DOMAINS.get((stage or "").lower())
 
 
+# ⚠️ HER STAGE FIRST, THEN THE WHOLE LIBRARY (2026-10-31, the user: "if a user
+# isn't trying to conceive but they ask a pregnancy doubt, it shouldn't
+# matter"). This SOFTENS scope_domain above rather than reverting it: her own
+# stage's content still wins whenever it can carry the answer, so most "open in
+# the app" pointers still land on her side. Only when the wider library is a
+# clearly better match (or hers matches nothing) does the answer come from
+# another stage — instead of skipping our own content and going to the web.
+# The cost, named: such an answer's cards point into another stage, which the
+# app opens in its reader sheet rather than as that stage's own page.
+WIDEN_MARGIN = 0.05  # the wide match must beat hers by this much to replace it
+
+
+def pick_results(scoped: list[dict], wide: list[dict], *,
+                 floor: float, margin: float = WIDEN_MARGIN) -> tuple[list[dict], bool]:
+    """Her stage's results, unless the whole library is clearly better.
+
+    Returns (results, widened). Pure, so it is tested without a database.
+    """
+    s = scoped[0]["similarity"] if scoped else 0.0
+    w = wide[0]["similarity"] if wide else 0.0
+    if s >= floor and s >= w - margin:
+        return scoped, False
+    if w >= floor and w > s:
+        return wide, True
+    return scoped, False
+
+
 def answer(
     question: str,
     *,
@@ -277,8 +308,14 @@ def answer(
         usage.log_usage(channel=channel, user_key=user_key, cache_hit=False)
         return _response(rf, "red_flag")
 
-    # Her stage's content only (see scope_domain).
+    # Her stage's content first (see scope_domain and pick_results).
+    # Kept for revert — "her stage's content only":
+    # domain = scope_domain(stage, domain)
+    explicit_domain = domain
     domain = scope_domain(stage, domain)
+    # Widen only a scope that came from her stage; a caller's explicit domain
+    # is a real filter and stays one.
+    may_widen = domain is not None and not explicit_domain
 
     corrected = clean_corrected_age(child_age_corrected_months, child_age_months)
     signals = clean_ids(family_signals, FAMILY_SIGNALS) if child_age_months is not None else []
@@ -298,6 +335,12 @@ def answer(
         corrected_months=corrected, signals=signals, conditions=conditions,
         window_source=window,
     )
+    # ":w1" = may be answered from the whole library (2026-10-31, pick_results).
+    # Answers cached under the stage-only scope could be a web answer or "not in
+    # our content" for a question another stage covers; a new key means none of
+    # them is served again. Kept for revert: the key without ":w1".
+    if may_widen:
+        stage_key = f"{stage_key}:w1"
     is_ttc = (stage or "").lower() in ("trying", "ttc", "trying_to_conceive")
     personal = cache.is_personal(question)  # her-own-data questions are never cached
 
@@ -316,6 +359,15 @@ def answer(
     # 5) ONE wide semantic search — feeds BOTH the answer and the sections.
     results = retrieve(question, top_k=settings.sections_retrieval_k,
                        domain=domain, q_vector=q_vector)
+    if may_widen:
+        # A second vector search, no second embedding: costs a database query,
+        # never an LLM call.
+        wide = retrieve(question, top_k=settings.sections_retrieval_k,
+                        domain=None, q_vector=q_vector)
+        results, widened = pick_results(
+            results, wide, floor=settings.min_retrieval_similarity)
+        if widened:
+            log.info("ask: widened beyond stage=%s for a better match", stage)
     top_sim = results[0]["similarity"] if results else 0.0
     stage_note = (
         describe_ttc_stage(chapter, ttc_path, months_trying, cycle_day,

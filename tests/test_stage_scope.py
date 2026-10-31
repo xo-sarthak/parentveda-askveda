@@ -75,3 +75,33 @@ def test_parenting_is_scoped_to_its_own_content(stage):
 def test_parenting_cache_key_is_new_so_unscoped_answers_are_never_served():
     assert stage_key_for(child_age_months=4, stage="parenting") == "cm4:s1"
     assert stage_key_for(stage="parenting") == "c:s1"
+
+
+# ---- her stage first, then the whole library (2026-10-31) --------------------
+
+from app.answer import pick_results  # noqa: E402
+
+
+def _r(sim, doc="d"):
+    return [{"similarity": sim, "doc_id": doc}]
+
+
+def test_her_stage_wins_when_it_can_carry_the_answer():
+    res, widened = pick_results(_r(0.55, "ttc"), _r(0.58, "preg"), floor=0.30)
+    assert (res[0]["doc_id"], widened) == ("ttc", False)
+
+
+def test_a_clearly_better_match_elsewhere_is_used():
+    # A TTC user asking a pregnancy question: hers barely matches, pregnancy's does.
+    res, widened = pick_results(_r(0.34, "ttc"), _r(0.71, "preg"), floor=0.30)
+    assert (res[0]["doc_id"], widened) == ("preg", True)
+
+
+def test_nothing_of_hers_but_something_elsewhere_is_used():
+    res, widened = pick_results([], _r(0.62, "preg"), floor=0.30)
+    assert (res[0]["doc_id"], widened) == ("preg", True)
+
+
+def test_nothing_anywhere_stays_hers_and_falls_to_the_web():
+    res, widened = pick_results(_r(0.12, "ttc"), _r(0.20, "preg"), floor=0.30)
+    assert (res[0]["doc_id"], widened) == ("ttc", False)
