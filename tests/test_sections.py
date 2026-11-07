@@ -127,3 +127,46 @@ def test_items_carry_the_deep_link_identity():
     item = s["content"][0]
     assert item["doc_id"] == "ttctest_amh"  # the app routes on this prefix
     assert item["kind"] == "ttctest"
+
+
+# --- recipes from the table (the flip, app migration 0161) --------------------
+
+def test_a_recipe_chunk_is_a_recipe_card_with_the_dish_id():
+    c = _chunk("ragipancake", "Porridge", 0.9, src="recipes", sid="uuid-1")
+    item = sections.build_sections([c])["content"][0]
+    assert item["kind"] == "recipe"
+    assert item["doc_id"] == "ragipancake"
+
+
+def test_other_chunks_keep_their_own_kind():
+    c = _chunk("ppart_a", "read", 0.9)
+    assert sections.build_sections([c])["content"][0]["kind"] == "read"
+
+
+class _FakeTable:
+    """Stands in for the Supabase client, and refuses a column the table lacks."""
+    def __init__(self, rows, columns):
+        self.rows, self.columns = rows, columns
+    def select(self, cols):
+        for c in [x.strip() for x in cols.split(",")]:
+            assert c in self.columns, f"no column {c}"
+        return self
+    def in_(self, *_):
+        return self
+    def execute(self):
+        return type("R", (), {"data": self.rows})()
+
+
+def test_a_recipe_card_gets_its_full_text_though_the_table_has_no_body(monkeypatch):
+    from ingest.ingest import SOURCE_SPECS
+    row = {"id": "u1", "domain": "parenting", "category": "Porridge",
+           "title": "Ragi porridge", "subtitle": "", "age_tag": "", "highlight": "",
+           "why": "Ragi carries calcium.", "healthier_note": "",
+           "ingredients": ["ragi"], "steps": ["Roast it."], "storage": [],
+           "mistakes": [], "nutrients": []}
+    cols = {c.strip() for c in SOURCE_SPECS["recipes"][0].split(",")}
+    fake = type("S", (), {"table": lambda self, t: _FakeTable([row], cols)})()
+    monkeypatch.setattr(sections, "supabase", fake)
+    item = {"source_table": "recipes", "source_id": "u1", "snippet": "cut off"}
+    sections.attach_bodies([item])
+    assert "Roast it." in item["body"]

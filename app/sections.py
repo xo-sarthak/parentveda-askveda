@@ -65,6 +65,27 @@ def enrich_doc_ids(results: list[dict]) -> list[dict]:
             r["doc_id"] = meta.get("doc_id")
             if meta.get("source_label"):
                 r["source_label"] = meta["source_label"]
+
+    # A dish from the `recipes` table: the app opens it by source_key, the id
+    # every saved dish and link already uses. The chunk holds only the uuid.
+    recipe_ids = list({
+        r.get("source_id") for r in results
+        if r.get("source_table") == "recipes" and r.get("source_id")
+    })
+    if recipe_ids:
+        try:
+            rows = (
+                supabase.table("recipes")
+                .select("id, source_key")
+                .in_("id", recipe_ids)
+                .execute()
+            ).data or []
+            keys = {row["id"]: row.get("source_key") for row in rows}
+            for r in results:
+                if r.get("source_table") == "recipes":
+                    r["doc_id"] = keys.get(r.get("source_id"))
+        except Exception as e:  # pragma: no cover
+            print(f"[sections.enrich_doc_ids] non-fatal: {e}")
     return results
 
 
@@ -75,7 +96,9 @@ def _item(r: dict) -> dict:
         "doc_id": r.get("doc_id") or r.get("source_id"),
         "source_table": r.get("source_table"),
         "source_id": r.get("source_id"),
-        "kind": r.get("category"),
+        # A recipe chunk's category is the dish type ("Porridge"), which the app
+        # cannot route on.
+        "kind": "recipe" if r.get("source_table") == "recipes" else r.get("category"),
         "title": r.get("title"),
         "url": r.get("url"),
         "snippet": (r.get("chunk_text") or "").strip()[:140],
@@ -93,9 +116,17 @@ def attach_bodies(items: list[dict]) -> None:
     bodies: dict[tuple, str] = {}
     for table, ids in by_table.items():
         try:
-            rows = supabase.table(table).select("id, body").in_("id", ids).execute().data or []
+            # ⚠️ NOT EVERY SOURCE HAS A `body` COLUMN. recipes, reads and products
+            # keep their text across several, so selecting `body` failed and every
+            # card from those tables opened a 140-character snippet, with only a
+            # log line to show for it. ingest already knows how to build each
+            # one's text. Imported here to keep app start-up light.
+            from ingest.ingest import SOURCE_SPECS
+            spec = SOURCE_SPECS.get(table)
+            cols, text_fn = (spec[0], spec[2]) if spec else ("id, body", lambda x: x.get("body"))
+            rows = supabase.table(table).select(cols).in_("id", ids).execute().data or []
             for r in rows:
-                bodies[(table, r["id"])] = r.get("body") or ""
+                bodies[(table, r["id"])] = text_fn(r) or ""
         except Exception as e:  # pragma: no cover
             print(f"[sections.attach_bodies] non-fatal ({table}): {e}")
     for it in items:

@@ -134,3 +134,17 @@ def test_a_reads_myth_fact_card_reaches_the_index():
     assert "You have spoiled the baby." in text
     assert "Sleep architecture changed." in text
     assert "Put down drowsy, not asleep." in text
+
+
+def test_a_correction_to_a_builtin_read_makes_no_chunks():
+    """veda_knowledge already holds the built-in read, so a partial row beside it
+    would give one question two answers (app migration 0158)."""
+    from ingest.ingest import _chunk_rows_for
+    row = {**ROWS["reads"], "corrects_builtin": True}
+    assert _chunk_rows_for("reads", row) == []
+
+
+def test_a_new_read_is_still_indexed():
+    from ingest.ingest import _chunk_rows_for
+    row = {**ROWS["reads"], "corrects_builtin": False}
+    assert _chunk_rows_for("reads", row)

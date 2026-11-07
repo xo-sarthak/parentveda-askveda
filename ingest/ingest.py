@@ -194,7 +194,8 @@ SOURCE_SPECS: dict[str, tuple[str, object, object]] = {
         "healthier_note, ingredients, steps, storage, mistakes, nutrients",
         _base_recipe, _text_recipe),
     "reads": (
-        "id, domain, collection, title, teaser, why_today, evidence, sections",
+        "id, domain, collection, title, teaser, why_today, evidence, sections, "
+        "corrects_builtin",
         _base_read, _text_read),
     "products": (
         "id, domain, category, name, brand, price_inr, best_for, summary, "
@@ -269,6 +270,12 @@ def plan_changes(
 
 def _chunk_rows_for(table: str, row: dict) -> list[dict]:
     """One content row → its chunk rows (each = a piece of body + shared metadata)."""
+    # A correction to a built-in read (0158) is a few changed fields. veda_knowledge
+    # already holds that read, so indexing these beside it would give one question
+    # two answers. Returning nothing also clears any chunks it had: the full run
+    # treats them as stale, and reindex_source deletes first.
+    if row.get("corrects_builtin"):
+        return []
     _, base_fn, text_fn = SOURCE_SPECS[table]
     base = base_fn(row)
     out: list[dict] = []
