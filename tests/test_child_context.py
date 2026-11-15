@@ -118,7 +118,8 @@ def test_the_app_and_service_vocabularies_match():
     # (ppAskVedaContext). If either side adds an id, add it to both.
     assert set(FAMILY_SIGNALS) == {
         "born_early", "c_section", "formula", "breastfeeding", "twins",
-        "after_treatment", "two_at_home", "after_loss"}
+        "after_treatment", "two_at_home", "after_loss",
+        "sleep_nights", "sleep_naps"}
     assert set(CHILD_CONDITIONS) == {
         "eczema", "cmpa", "foodAllergy", "reflux", "colic", "tongueTie",
         "asthma", "lowBirthWeight", "devDelay", "hearing", "vision"}

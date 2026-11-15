@@ -451,6 +451,16 @@ FAMILY_SIGNALS: dict[str, str] = {
         "She had a pregnancy loss before this baby, which she recorded in the app. "
         "Mention it only if her question is about it."
     ),
+    # 2026-11-16 (app pp_relevance.dart sleepNights / sleepNaps): her own
+    # answer about how the baby sleeps. Context for a sleep question, never a
+    # diagnosis, and never a reason to bring sleep into an unrelated answer.
+    "sleep_nights": (
+        "She told the app the baby's nights are hard (waking in the night or very early). "
+        "Use it only if her question is about sleep."
+    ),
+    "sleep_naps": (
+        "She told the app the baby's naps are short. Use it only if her question is about sleep."
+    ),
 }
 
 CHILD_CONDITIONS: dict[str, str] = {
